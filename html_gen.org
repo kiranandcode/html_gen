@@ -24,7 +24,12 @@ We'll be using the path utilities provided by the standard library to help us na
 #+begin_src rust :tangle src/main.rs :comments both
 use std::path;
 #+end_src
+** Module structure
+We'll be splitting up our codebase as follows:
 
+#+begin_src rust :tangle src/main.rs :noweb yes :comments both
+<<modules>>
+#+end_src
 
 
 * Command Line Interface
@@ -42,11 +47,11 @@ are placed in ~./bin/~ dir, which is made if it does not exist.
  ~./template/~ dir to resolve these references.
 - *specify input folder* - by default the program searches ~./src/~ for templated files to be 
 
-#+begin_src rust :tangle src/main.rs 
+#+begin_src rust :tangle src/main.rs :comments both
 fn main() {
 #+end_src
 Now, as specified, our output and template paths take default values from where the application was instantiated.
-#+begin_src rust :tangle src/main.rs 
+#+begin_src rust :tangle src/main.rs :comments both
     let mut output_path = String::from("./bin");
     let mut template_path = String::from("./template");
     let mut input_path = String::from("./src");
@@ -54,7 +59,7 @@ Now, as specified, our output and template paths take default values from where 
 
 
 Using argparse, we can implement this cmdline interface as follows:
-#+begin_src rust :tangle src/main.rs 
+#+begin_src rust :tangle src/main.rs :comments both
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Simple templating engine for html documents");
@@ -76,8 +81,19 @@ Using argparse, we can implement this cmdline interface as follows:
 Now we've obtained the directory for the files to be stored, we can move on to the main logic of the program.
 Fundamentaly the logic of this program can be split into two main components:
  - Recursively descending the source directory, keeping track of the file structure.
+#+name: modules 
+#+begin_src rust
+mod parser;
+#+end_src
  - Extracting the data from a given file, using it to populate a compiled file
-#+begin_src rust :tangle src/main.rs 
+#+name: modules 
+#+begin_src rust 
+mod crawler;
+#+end_src
+** Parser Logic
+
+
+#+begin_src rust :tangle src/main.rs  :comments both
 }
 #+end_src
 
