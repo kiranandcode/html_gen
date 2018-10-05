@@ -95,8 +95,7 @@ Before we begin, we'll need the following packages in our parser:
 use std::collections::HashMap;
 <<structures>>
 #+end_src
-Once again, our core specification for the parser is to extract a set of key value pairs. Our syntax, just to keep it simple
-will be of the following form:
+Once again, our core specification for the parser is to extract a set of key value pairs. Our syntax will be of the following form:
 #+begin_src 
 ID := (Sigma/{:, (, )})+
 INTRO := #+template: Sigma+\n
@@ -105,7 +104,8 @@ DOCUMENT := INTRO MAPPING*
 #+end_src
 Our parser will take in a string (the contents of the file), and return either a hashmap of values and a template name, or an error.
 #+begin_src rust :tangle src/parser.rs :noweb yes :comments org
-pub fn parse_source_string(source: &str) -> Result<(String, HashMap<String,String>),ParseError> {
+pub fn parse_source_string(source: &str) 
+   -> Result<(String, HashMap<String,String>),ParseError> {
 <<source parsing code>>
 }
 #+end_src
@@ -119,5 +119,10 @@ pub enum ParseError {
    InvalidIdentifier
 }
 #+end_src
+For simplicity, we're making the parser as general as possible and opting to make failure as unlikely as possible.
 
+To do the parsing, first we start off by consuming the template directive, and failing if not present:
+#+name: source parsing code
+#+begin_src rust 
+#+end_src
 
