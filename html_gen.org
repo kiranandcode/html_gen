@@ -4,54 +4,46 @@ Coded using literate programming.
 
 
 * Preamble
-While the overall nature of this project is quite simple - just a
-bit of file loading and exports, we can leverage rust's ecosystem
-to make our development a little easier.
+While the overall nature of this project is quite simple - just a bit of file loading and exports, we can leverage rust's ecosystem to make our development a little easier.
 
 ** Crates
 The crates we'll be using are as follows:
-- *ArgParse* - This is a crate that I used a while back when making
-another command line application. It provides a very nice rustic
-interface over a library which produces command line interfaces
-compliant with most unix/linux standards.
+- *ArgParse* - This is a crate that I used a while back when making another command line application. It provides a very nice rustic interface over a library which produces command line interfaces compliant with most unix/linux standards.
 
-#+begin_src rust :tangle src/main.rs  :comments both
+#+begin_src rust :tangle src/main.rs  :comments org
 extern crate argparse;
 #+end_src
 
 ** Standard Library Imports
 We'll be using the path utilities provided by the standard library to help us navigate the filesystem in a cross platform way.
-#+begin_src rust :tangle src/main.rs :comments both
+#+begin_src rust :tangle src/main.rs :comments org
 use std::path;
 #+end_src
 ** Module structure
 We'll be splitting up our codebase as follows:
 
-#+begin_src rust :tangle src/main.rs :noweb yes :comments both
+#+begin_src rust :tangle src/main.rs :noweb yes :comments org
 <<modules>>
 #+end_src
 
 
 * Command Line Interface
-Clearly this project is going to be a command line application, as the static generator will need to parse through a document
-and construct the components.
+Clearly this project is going to be a command line application, as the static generator will need to parse a document and construct the components.
 
-Using argparse - as imported in the preamble, we'll design a sweet
-and sexy interface to access our application.
-The main actions we'll allow a user to perform using this application
-will be as follows:
-- *specify output folder* - by default the output of the compiled files
-are placed in ~./bin/~ dir, which is made if it does not exist.
-- *specify template folder* - within a non-templated file, when
- a template reference is used, by default the application searches the 
+Using argparse - as imported in the preamble, we'll design a sweet and sexy interface to access our application. The main actions we'll allow a user to perform using this application will be as follows:
+- *specify output folder* - by default the output of the compiled files are placed in ~./bin/~ dir, which is made if it does not exist.
+- *specify template folder* - within a non-templated file, when a template reference is used, by default the application searches the 
  ~./template/~ dir to resolve these references.
-- *specify input folder* - by default the program searches ~./src/~ for templated files to be 
+- *specify input folder* - by default the program searches ~./src/~ for the source files to be compiled
 
-#+begin_src rust :tangle src/main.rs :comments both
+#+begin_src rust :tangle src/main.rs :comments org :noweb yes
 fn main() {
+ <<high level interface>>
+}
 #+end_src
 Now, as specified, our output and template paths take default values from where the application was instantiated.
-#+begin_src rust :tangle src/main.rs :comments both
+#+name: high level interface
+#+begin_src rust :comments org
     let mut output_path = String::from("./bin");
     let mut template_path = String::from("./template");
     let mut input_path = String::from("./src");
@@ -59,18 +51,25 @@ Now, as specified, our output and template paths take default values from where 
 
 
 Using argparse, we can implement this cmdline interface as follows:
-#+begin_src rust :tangle src/main.rs :comments both
+#+name: high level interface
+#+begin_src rust :comments org
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Simple templating engine for html documents");
         ap.refer(&mut output_path)
-        .add_option(&["-o","--output"], argparse::Store, "directory for the output files to be saved");
+        .add_option(&["-o","--output"], 
+                    argparse::Store, 
+                    "directory for the output files to be saved");
 
         ap.refer(&mut template_path)
-        .add_option(&["-t","--template"], argparse::Store, "directory to be searched to find templates");
+        .add_option(&["-t","--template"], 
+                    argparse::Store, 
+                    "directory to be searched to find templates");
 
         ap.refer(&mut input_path)
-        .add_option(&["-i","--input"], argparse::Store, "directory in which the source files to be compiled are located");
+        .add_option(&["-i","--input"], 
+                    argparse::Store, "
+                    directory in which the source files to be compiled are located");
 
 
         ap.parse_args_or_exit();
@@ -91,9 +90,34 @@ mod parser;
 mod crawler;
 #+end_src
 ** Parser Logic
-
-
-#+begin_src rust :tangle src/main.rs  :comments both
+Before we begin, we'll need the following packages in our parser:
+#+begin_src rust :tangle src/parser.rs :noweb yes :comments org
+use std::collections::HashMap;
+<<structures>>
+#+end_src
+Once again, our core specification for the parser is to extract a set of key value pairs. Our syntax, just to keep it simple
+will be of the following form:
+#+begin_src 
+ID := (Sigma/{:, (, )})+
+INTRO := #+template: Sigma+\n
+MAPPING := ID:  ((SIGMA/{¬})|\¬)* ¬
+DOCUMENT := INTRO MAPPING*
+#+end_src
+Our parser will take in a string (the contents of the file), and return either a hashmap of values and a template name, or an error.
+#+begin_src rust :tangle src/parser.rs :noweb yes :comments org
+pub fn parse_source_string(source: &str) -> Result<(String, HashMap<String,String>),ParseError> {
+<<source parsing code>>
 }
 #+end_src
+Where a parsing error will be one of the following:
+ - **Template not found** - if the source file does not specify a template to be loaded
+ - **Invalid identifier** - if an identifier contains an invalid character.
+#+name: structures
+#+begin_src rust 
+pub enum ParseError {
+   TemplateNotFound,
+   InvalidIdentifier
+}
+#+end_src
+
 
