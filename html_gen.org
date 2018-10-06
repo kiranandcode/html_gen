@@ -94,6 +94,13 @@ mod crawler;
 #+begin_src rust
 mod generator;
 #+end_src 
+
+Thus the high level execution of the system is as follows:
+#+name: high level interface
+#+begin_src rust :comments org
+#+end_src
+
+
 ** Parser Logic
 Before we begin, we'll need the following packages in our parser:
 #+begin_src rust :tangle src/parser.rs :noweb yes :comments org
@@ -133,11 +140,20 @@ if !source.trim_left().starts_with("#+template:") {
    return Err(ParseError::TemplateNotFound);
 }
 let source = source.trim_left().clone().split_at(11);
+println!("source: {}", source);
 //source.trim_left().
+return Err(ParseError::TemplateNotFound);
 #+end_src
 
 ** Crawler Logic
 The core logic for the crawler is to descend the input directory, keeping track of the current path, pass each file through the parser, then pass on the generated mapping to the generator, along with a corresponding template file and output file.
 
+#+begin_src rust :tangle src/crawler.rs :noweb yes :comments org
+#+end_src
+
+
 ** Generator Logic
+
+#+begin_src rust :tangle src/generator.rs :noweb yes :comments org
+#+end_src
 
