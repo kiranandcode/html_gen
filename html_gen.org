@@ -84,11 +84,16 @@ Fundamentaly the logic of this program can be split into two main components:
 #+begin_src rust
 mod parser;
 #+end_src
- - Extracting the data from a given file, using it to populate a compiled file
+ - Extracting the data from a given file
 #+name: modules 
 #+begin_src rust 
 mod crawler;
 #+end_src
+ - generate a compiled html file from the template and save it to a folder
+#+name: modules
+#+begin_src rust
+mod generator;
+#+end_src 
 ** Parser Logic
 Before we begin, we'll need the following packages in our parser:
 #+begin_src rust :tangle src/parser.rs :noweb yes :comments org
@@ -124,5 +129,15 @@ For simplicity, we're making the parser as general as possible and opting to mak
 To do the parsing, first we start off by consuming the template directive, and failing if not present:
 #+name: source parsing code
 #+begin_src rust 
+if !source.trim_left().starts_with("#+template:") {
+   return Err(ParseError::TemplateNotFound);
+}
+let source = source.trim_left().clone().split_at(11);
+//source.trim_left().
 #+end_src
+
+** Crawler Logic
+The core logic for the crawler is to descend the input directory, keeping track of the current path, pass each file through the parser, then pass on the generated mapping to the generator, along with a corresponding template file and output file.
+
+** Generator Logic
 
