@@ -122,6 +122,12 @@ pub fn parse_source_string(source: &str)
 <<source parsing utility functions>>
 <<source parsing code>>
 }
+
+mod test {
+   use super::*;
+
+  <<source parsing tests>>
+}
 #+end_src
 Where a parsing error will be one of the following:
  - **Template not found** - if the source file does not specify a template to be loaded
@@ -135,15 +141,64 @@ pub enum ParseError {
 #+end_src
 For simplicity, we're making the parser as general as possible and opting to make failure as unlikely as possible.
 
-To do the parsing, first we start off by consuming the template directive, and failing if not present:
+To do the parsing, first we start off by consuming the template directive, and failing if not present.
+
+First, we check that the template contains a template directive - we're leaving resolving the template to a file to a later point.
 #+name: source parsing code
 #+begin_src rust 
 if !source.trim_left().starts_with("#+template:") {
    return Err(ParseError::TemplateNotFound);
 }
+#+end_src
+
+This means that if a source does not start with a directive, its parsing will fail:
+#+name: source parsing tests
+#+begin_src rust
+#[test]
+fn must_start_with_template_directive() {
+   assert!(parse_source_string("temp-justkidding\n id:\n #+template:\n").is_error());
+}
+#+end_src
+
+After this check, we can safetly consume the first part of the string.
+#+name: source parsing code
+#+begin_src rust 
 let source = source.trim_left().split_at(11).1;
-println!("source: {:?}", split_at_pattern(source, "\n"));
-//source.trim_left().
+#+end_src
+
+Next, let's retrieve the actual template name - failing if it was not provided.
+#+name: source parsing code
+#+begin_src rust 
+let (raw_template_name, remaining_string) = split_at_pattern(source, "\n");
+let template_name = raw_template_name.trim();
+if template_name.is_empty() {
+   return Err(ParseError::TemplateNotFound);
+}
+#+end_src
+
+This also means that if a source does not provide a template name its parsing will fail:
+#+name: source parsing tests
+#+begin_src rust
+#[test]
+fn must_provide_template_name() {
+    assert!(parse_source_string("#+template: example\n").is_ok());
+    assert!(parse_source_string("#+template:\n").is_error());
+    assert!(parse_source_string("#+template:    \n").is_error());
+    assert!(parse_source_string("#+template:   \n  \n").is_error());
+    assert!(parse_source_string("#+template:   \t  \n").is_error());
+}
+#+end_src
+
+
+Now, our remaining task is to simply iterate through the remaining ~ID: DATA~ pairs, and accumulate these values into a hashmap - let's begin
+by setting up an initial hashmap to store the files.
+#+name: source_parsing code
+#+begin_src rust
+let data : Hashmap<String, String> = HashMap::new();
+#+end_src
+
+#+name: source parsing code
+#+begin_src rust 
 return Err(ParseError::TemplateNotFound);
 #+end_src
 Notice, that during the parsing, we're using our own custom function to allow us to split by a pattern, a feature the
