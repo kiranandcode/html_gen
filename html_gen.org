@@ -98,6 +98,7 @@ mod generator;
 Thus the high level execution of the system is as follows:
 #+name: high level interface
 #+begin_src rust :comments org
+parser::parse_source_string("  \n#+template: simple\nbody: Kiran is the best \\¬ ¬");
 #+end_src
 
 
@@ -118,6 +119,7 @@ Our parser will take in a string (the contents of the file), and return either a
 #+begin_src rust :tangle src/parser.rs :noweb yes :comments org
 pub fn parse_source_string(source: &str) 
    -> Result<(String, HashMap<String,String>),ParseError> {
+<<source parsing utility functions>>
 <<source parsing code>>
 }
 #+end_src
@@ -139,10 +141,25 @@ To do the parsing, first we start off by consuming the template directive, and f
 if !source.trim_left().starts_with("#+template:") {
    return Err(ParseError::TemplateNotFound);
 }
-let source = source.trim_left().clone().split_at(11);
-println!("source: {}", source);
+let source = source.trim_left().split_at(11).1;
+println!("source: {:?}", split_at_pattern(source, "\n"));
 //source.trim_left().
 return Err(ParseError::TemplateNotFound);
+#+end_src
+Notice, that during the parsing, we're using our own custom function to allow us to split by a pattern, a feature the
+stdlib doesn't seem to provide.
+
+This utility function splits a string by the first occurance of a pattern returning a string up to the first occurrance 
+of the pattern and a string continuing from the pattern - the second string contains the text matching the pattern.
+#+name: source parsing utility functions
+#+begin_src rust
+fn split_at_pattern<'a>(string: &'a str, pat: &str) -> (&'a str, &'a str) {
+  if let Some(ind) = string.find(pat) {
+     string.split_at(ind)
+  } else {
+     (&"", string)
+  }
+}
 #+end_src
 
 ** Crawler Logic
