@@ -123,6 +123,7 @@ pub fn parse_source_string(source: &str)
 <<source parsing code>>
 }
 
+#[cfg(test)]
 mod test {
    use super::*;
 
@@ -133,7 +134,7 @@ Where a parsing error will be one of the following:
  - **Template not found** - if the source file does not specify a template to be loaded
  - **Invalid identifier** - if an identifier contains an invalid character.
 #+name: structures
-#+begin_src rust 
+#+begin_src rust :comments org
 pub enum ParseError {
    TemplateNotFound,
    InvalidIdentifier
@@ -145,7 +146,7 @@ To do the parsing, first we start off by consuming the template directive, and f
 
 First, we check that the template contains a template directive - we're leaving resolving the template to a file to a later point.
 #+name: source parsing code
-#+begin_src rust 
+#+begin_src rust :comments org
 if !source.trim_left().starts_with("#+template:") {
    return Err(ParseError::TemplateNotFound);
 }
@@ -153,22 +154,22 @@ if !source.trim_left().starts_with("#+template:") {
 
 This means that if a source does not start with a directive, its parsing will fail:
 #+name: source parsing tests
-#+begin_src rust
+#+begin_src rust :comments org
 #[test]
 fn must_start_with_template_directive() {
-   assert!(parse_source_string("temp-justkidding\n id:\n #+template:\n").is_error());
+   assert!(parse_source_string("temp-justkidding\n id:\n #+template:\n").is_err());
 }
 #+end_src
 
 After this check, we can safetly consume the first part of the string.
 #+name: source parsing code
-#+begin_src rust 
+#+begin_src rust  :comments org
 let source = source.trim_left().split_at(11).1;
 #+end_src
 
 Next, let's retrieve the actual template name - failing if it was not provided.
 #+name: source parsing code
-#+begin_src rust 
+#+begin_src rust :comments org
 let (raw_template_name, remaining_string) = split_at_pattern(source, "\n");
 let template_name = raw_template_name.trim();
 if template_name.is_empty() {
@@ -178,14 +179,14 @@ if template_name.is_empty() {
 
 This also means that if a source does not provide a template name its parsing will fail:
 #+name: source parsing tests
-#+begin_src rust
+#+begin_src rust :comments org
 #[test]
 fn must_provide_template_name() {
     assert!(parse_source_string("#+template: example\n").is_ok());
-    assert!(parse_source_string("#+template:\n").is_error());
-    assert!(parse_source_string("#+template:    \n").is_error());
-    assert!(parse_source_string("#+template:   \n  \n").is_error());
-    assert!(parse_source_string("#+template:   \t  \n").is_error());
+    assert!(parse_source_string("#+template:\n").is_err());
+    assert!(parse_source_string("#+template:    \n").is_err());
+    assert!(parse_source_string("#+template:   \n  \n").is_err());
+    assert!(parse_source_string("#+template:   \t  \n").is_err());
 }
 #+end_src
 
@@ -193,12 +194,12 @@ fn must_provide_template_name() {
 Now, our remaining task is to simply iterate through the remaining ~ID: DATA~ pairs, and accumulate these values into a hashmap - let's begin
 by setting up an initial hashmap to store the files.
 #+name: source_parsing code
-#+begin_src rust
+#+begin_src rust :comments org
 let data : Hashmap<String, String> = HashMap::new();
 #+end_src
 
 #+name: source parsing code
-#+begin_src rust 
+#+begin_src rust  :comments org
 return Err(ParseError::TemplateNotFound);
 #+end_src
 Notice, that during the parsing, we're using our own custom function to allow us to split by a pattern, a feature the
@@ -207,7 +208,7 @@ stdlib doesn't seem to provide.
 This utility function splits a string by the first occurance of a pattern returning a string up to the first occurrance 
 of the pattern and a string continuing from the pattern - the second string contains the text matching the pattern.
 #+name: source parsing utility functions
-#+begin_src rust
+#+begin_src rust :comments org
 fn split_at_pattern<'a>(string: &'a str, pat: &str) -> (&'a str, &'a str) {
   if let Some(ind) = string.find(pat) {
      string.split_at(ind)
