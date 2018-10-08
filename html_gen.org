@@ -9,9 +9,14 @@ While the overall nature of this project is quite simple - just a bit of file lo
 ** Crates
 The crates we'll be using are as follows:
 - *ArgParse* - This is a crate that I used a while back when making another command line application. It provides a very nice rustic interface over a library which produces command line interfaces compliant with most unix/linux standards.
-
+an old fashioned regex.
 #+begin_src rust :tangle src/main.rs  :comments org
 extern crate argparse;
+#+end_src
+
+- *Regex* - We'll be taking advantage of this regex crate to make the parsing phase a little easier; while the stdlib provides some pretty useful string matching utilities, they don't quite match up to
+#+begin_src rust :tangle src/main.rs  :comments org
+extern crate regex;
 #+end_src
 
 ** Standard Library Imports
@@ -106,6 +111,7 @@ parser::parse_source_string("  \n#+template: simple\nbody: Kiran is the best \\Â
 Before we begin, we'll need the following packages in our parser:
 #+begin_src rust :tangle src/parser.rs :noweb yes :comments org
 use std::collections::HashMap;
+use regex::Regex;
 <<structures>>
 #+end_src
 Once again, our core specification for the parser is to extract a set of key value pairs. Our syntax will be of the following form:
@@ -193,10 +199,44 @@ fn must_provide_template_name() {
 
 Now, our remaining task is to simply iterate through the remaining ~ID: DATA~ pairs, and accumulate these values into a hashmap - let's begin
 by setting up an initial hashmap to store the files.
-#+name: source_parsing code
+#+name: source parsing code
 #+begin_src rust :comments org
-let data : Hashmap<String, String> = HashMap::new();
+let mut data : HashMap<String, String> = HashMap::new();
 #+end_src
+Next, we'll define a simple loop to do the accumulation - it will use a reference to the hashmap, and the source:
+#+name: source parsing code
+#+begin_src rust :comments org :noweb yes
+let mut completed = false;
+let mut source = remaining_string;
+let mut data = data;
+
+while !completed {
+   <<souce pairs loop>>
+}
+#+end_src
+
+Now, inside the loop, we'll first obtain the key value using our ~split_at_pattern~ function.
+#+name: source pairs loop
+#+begin_src rust :comments org
+let (raw_key_name, remaining_string) = split_at_pattern(source, ":");
+let key_name = raw_key_name.trim();
+source = remaining_string;
+#+end_src
+
+Now due to the way we're extracting the values, bad input may lead to an incorrect parse - we'll try and avoid this by printing an error when the IDs are wrong:
+#+name: source pairs loop
+#+begin_src rust :comments org
+#+end_src
+
+Additionally, we'll need to extract the data:
+#+name: source pairs loop
+#+begin_src rust :comments org
+let (data, remaining_string) = split_at_pattern(source, "Â¬");
+source = remaining_string;
+#+end_src
+
+
+Now, if the key_name is not empty, we will store the values into the hashmap - if no key was provided, we'll quit.
 
 #+name: source parsing code
 #+begin_src rust  :comments org

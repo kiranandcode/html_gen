@@ -5,3 +5,4 @@ authors = ["Kiran Gopinathan <zcabkgo@ucl.ac.uk>"]
 
 [dependencies]
 argparse="*"
+regex="*"
