@@ -235,12 +235,11 @@ fn split_at_regex<'a>(string: &'a str, pat: &Regex) -> (&'a str, &'a str) {
   }
 }
 #+end_src
-
-
+Now, using this function, we can implement the key extraction.
 
 #+name: source pairs loop
 #+begin_src rust :comments org
-let (raw_key_name, remaining_string) = split_at_pattern(source, ":");
+let (raw_key_name, remaining_string) = split_at_regex(source, &key_regex);
 let key_name = raw_key_name.trim();
 source = remaining_string;
 #+end_src
@@ -248,6 +247,10 @@ source = remaining_string;
 Now due to the way we're extracting the values, bad input may lead to an incorrect parse - we'll try and avoid this by printing an error when the IDs are wrong:
 #+name: source pairs loop
 #+begin_src rust :comments org
+if key_name.size() == 0 {
+  eprintln!("Invalid parse, found empty/malformed ID tag");
+  ::std::process::exit(-1);
+}
 #+end_src
 
 Additionally, we'll need to extract the data:
