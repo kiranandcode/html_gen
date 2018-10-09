@@ -125,6 +125,7 @@ Our parser will take in a string (the contents of the file), and return either a
 #+begin_src rust :tangle src/parser.rs :noweb yes :comments org
 pub fn parse_source_string(source: &str) 
    -> Result<(String, HashMap<String,String>),ParseError> {
+<<source parsing regexes>>
 <<source parsing utility functions>>
 <<source parsing code>>
 }
@@ -214,7 +215,13 @@ while !completed {
    <<souce pairs loop>>
 }
 #+end_src
+To extract the keys and bodies, we'll be using a regex:
+#+name: source parsing regexes
+#+begin_src rust :comments org :noweb yes
+let key_regex = Regex::new("^[^¬]*:").unwrap();
+#+end_src
 
+Now, inside the loop, we'll use the regex to extract the key value:
 Now, inside the loop, we'll first obtain the key value using our ~split_at_pattern~ function.
 #+name: source pairs loop
 #+begin_src rust :comments org
