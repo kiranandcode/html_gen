@@ -215,14 +215,29 @@ while !completed {
    <<souce pairs loop>>
 }
 #+end_src
-To extract the keys and bodies, we'll be using a regex:
+To extract the keys and bodies, we'll be using a regex - it checks that the start of the string consists of non terminator characters,
+followed by a colon.
 #+name: source parsing regexes
 #+begin_src rust :comments org :noweb yes
 let key_regex = Regex::new("^[^¬]*:").unwrap();
 #+end_src
 
-Now, inside the loop, we'll use the regex to extract the key value:
-Now, inside the loop, we'll first obtain the key value using our ~split_at_pattern~ function.
+Now, inside the loop, we'll use the regex to extract the key values - for this purpose, we'll define a custom ~split_by_regex~ function,
+which operates like the ~split_at_pattern~ function but uses the first match of a regex to split the input.
+
+#+name: source parsing utility functions
+#+begin_src rust :comments org
+fn split_at_regex<'a>(string: &'a str, pat: &Regex) -> (&'a str, &'a str) {
+  if let Some(m) = pat.find(string) {
+     string.split_at(m.end)
+  } else {
+     (&"", string)
+  }
+}
+#+end_src
+
+
+
 #+name: source pairs loop
 #+begin_src rust :comments org
 let (raw_key_name, remaining_string) = split_at_pattern(source, ":");
