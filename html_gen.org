@@ -123,10 +123,11 @@ DOCUMENT := INTRO MAPPING*
 #+end_src
 Our parser will take in a string (the contents of the file), and return either a hashmap of values and a template name, or an error.
 #+begin_src rust :tangle src/parser.rs :noweb yes :comments org
+<<source parsing utility functions>>
+
 pub fn parse_source_string(source: &str) 
    -> Result<(String, HashMap<String,String>),ParseError> {
 <<source parsing regexes>>
-<<source parsing utility functions>>
 <<source parsing code>>
 }
 
@@ -140,11 +141,13 @@ mod test {
 Where a parsing error will be one of the following:
  - **Template not found** - if the source file does not specify a template to be loaded
  - **Invalid identifier** - if an identifier contains an invalid character.
+ - **Unterminated Body** - if a body does not have a valid terminator.
 #+name: structures
 #+begin_src rust :comments org
 pub enum ParseError {
    TemplateNotFound,
-   InvalidIdentifier
+   InvalidIdentifier,
+   UnterminatedBody
 }
 #+end_src
 For simplicity, we're making the parser as general as possible and opting to make failure as unlikely as possible.
@@ -212,14 +215,14 @@ let mut source = remaining_string;
 let mut data = data;
 
 while !completed {
-   <<souce pairs loop>>
+   <<source pairs loop>>
 }
 #+end_src
 To extract the keys and bodies, we'll be using a regex - it checks that the start of the string consists of non terminator characters,
 followed by a colon.
 #+name: source parsing regexes
 #+begin_src rust :comments org :noweb yes
-let key_regex = Regex::new("^[^¬]*:").unwrap();
+let key_regex = Regex::new("^[^¬:]*:").unwrap();
 #+end_src
 
 Now, inside the loop, we'll use the regex to extract the key values - for this purpose, we'll define a custom ~split_by_regex~ function,
@@ -229,7 +232,7 @@ which operates like the ~split_at_pattern~ function but uses the first match of 
 #+begin_src rust :comments org
 fn split_at_regex<'a>(string: &'a str, pat: &Regex) -> (&'a str, &'a str) {
   if let Some(m) = pat.find(string) {
-     string.split_at(m.end)
+     string.split_at(m.end())
   } else {
      (&"", string)
   }
@@ -247,27 +250,68 @@ source = remaining_string;
 Now due to the way we're extracting the values, bad input may lead to an incorrect parse - we'll try and avoid this by printing an error when the IDs are wrong:
 #+name: source pairs loop
 #+begin_src rust :comments org
-if key_name.size() == 0 {
+if key_name.len() == 0 {
   eprintln!("Invalid parse, found empty/malformed ID tag");
-  ::std::process::exit(-1);
+  return Err(ParseError::InvalidIdentifier);
 }
 #+end_src
-
-Additionally, we'll need to extract the data:
+Due to the way we extract the ids, we also end up bringing the colon as well. Let's just remove it before proceeding:
 #+name: source pairs loop
 #+begin_src rust :comments org
-let (data, remaining_string) = split_at_pattern(source, "¬");
+let key_name = key_name[0..key_name.len()-1].trim();
+#+end_src
+
+Now we can move on to extracting the data. Let's start by defining a regular expression to isolate specific syntax we wish to capture.
+#+name: source parsing regexes
+#+begin_src rust :comments org
+let data_regex = Regex::new("^([^¬]|\\\\¬)*¬").unwrap();
+#+end_src
+
+Using this regex we can trivially extract the data, repeating the code for key extraction.
+#+name: source pairs loop
+#+begin_src rust :comments org
+let (raw_data, remaining_string) = split_at_regex(source, &data_regex);
+let src_data = raw_data.trim();
 source = remaining_string;
 #+end_src
 
+While it is fine for data to be empty, we always require the user to provide the end character, so the string should never be 0.
+#+name: source pairs loop
+#+begin_src rust :comments org
+if src_data.len() == 0 {
+  eprintln!("Invalid parse, found body with no terminating tag.");
+  return Err(ParseError::UnterminatedBody);
+}
+#+end_src
 
-Now, if the key_name is not empty, we will store the values into the hashmap - if no key was provided, we'll quit.
+Now, as before, let's remove the terminating character.
+#+name: source pairs loop
+#+begin_src rust :comments org
+let src_data = src_data[0..src_data.len()-1].trim();
+#+end_src
+
+Finally, now we've extracted the id and the tag, we can simply put the values into our hashmap.
+#+name: source pairs loop
+#+begin_src rust :comments org
+data.insert(key_name.to_string(), src_data.to_string());
+#+end_src
+
+Now, we also need to check for a terminating condition - we'll do this by checking if the remaining string, when trimmed, is empty.
+#+name: source pairs loop
+#+begin_src rust :comments org
+if source.trim().is_empty() {
+    break;
+}
+#+end_src
+
+Finally, now that string has been consumed, we can simply return the template name and the populated hashmap.
 
 #+name: source parsing code
-#+begin_src rust  :comments org
-return Err(ParseError::TemplateNotFound);
+#+begin_src rust :comments org :noweb yes
+Ok((template_name.to_string(), data))
 #+end_src
-Notice, that during the parsing, we're using our own custom function to allow us to split by a pattern, a feature the
+
+Aside: Notice, that during the parsing, we're using our own custom function to allow us to split by a pattern, a feature the
 stdlib doesn't seem to provide.
 
 This utility function splits a string by the first occurance of a pattern returning a string up to the first occurrance 
