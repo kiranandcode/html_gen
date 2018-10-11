@@ -103,7 +103,7 @@ mod generator;
 Thus the high level execution of the system is as follows:
 #+name: high level interface
 #+begin_src rust :comments org
-parser::parse_source_string("  \n#+template: simple\nbody: Kiran is the best \\¬ ¬");
+println!("{:?}", parser::parse_source_string("  \n#+template: simple\nbody: \\ Kiran is the best\\ \\¬¬\ntitle: We are the \\b best <champions></champions> ¬"));
 #+end_src
 
 
@@ -144,6 +144,7 @@ Where a parsing error will be one of the following:
  - **Unterminated Body** - if a body does not have a valid terminator.
 #+name: structures
 #+begin_src rust :comments org
+#[derive(Debug)]
 pub enum ParseError {
    TemplateNotFound,
    InvalidIdentifier,
@@ -258,13 +259,40 @@ if key_name.len() == 0 {
 Due to the way we extract the ids, we also end up bringing the colon as well. Let's just remove it before proceeding:
 #+name: source pairs loop
 #+begin_src rust :comments org
-let key_name = key_name[0..key_name.len()-1].trim();
+let mut key_name = key_name.to_string();
+key_name.pop();
+let key_name = key_name.trim();
 #+end_src
 
 Now we can move on to extracting the data. Let's start by defining a regular expression to isolate specific syntax we wish to capture.
 #+name: source parsing regexes
 #+begin_src rust :comments org
-let data_regex = Regex::new("^([^¬]|\\\\¬)*¬").unwrap();
+let data_regex = Regex::new("^(\\\\¬|([^¬\\\\]|\\\\[^¬])*)*¬").unwrap();
+#+end_src
+
+The regex we're using can be explained as follows; the outermost kleene closure captures the main constraint that the data should start from the start of the string and end at the first occurrance
+of a terminating character.
+#+begin_src regex
+^ INTERNALS *¬
+#+end_src
+
+Next, for the contents of a body, we have to capture 2 main cases:
+- When the character is normal and non interesting
+- When the character is an escaped terminator.
+#+begin_src regex
+INTERNALS ::= (ESCAPED_TERMINATOR|NORMAL_CHARACTERS)
+#+end_src
+
+For the escaped terminator case, we simply match on a backspace followed by a terminator.
+#+begin_src regex
+ESCAPED_TERMINATOR = \¬
+#+end_src
+
+In the case of normal characters, either 
+- the character is neither a backslash or a terminator
+- the character is a backslash and is followed by anything other than a terminator
+#+begin_src regex
+NORMAL_CHARACTERS = ([^¬\\\\]|\\\\[^¬])*
 #+end_src
 
 Using this regex we can trivially extract the data, repeating the code for key extraction.
@@ -287,7 +315,9 @@ if src_data.len() == 0 {
 Now, as before, let's remove the terminating character.
 #+name: source pairs loop
 #+begin_src rust :comments org
-let src_data = src_data[0..src_data.len()-1].trim();
+let mut src_data = src_data.to_string();
+src_data.pop();
+let src_data = src_data.trim();
 #+end_src
 
 Finally, now we've extracted the id and the tag, we can simply put the values into our hashmap.
