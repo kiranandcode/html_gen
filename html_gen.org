@@ -48,7 +48,7 @@ fn main() {
 #+end_src
 Now, as specified, our output and template paths take default values from where the application was instantiated.
 #+name: high level interface
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
     let mut output_path = String::from("./bin");
     let mut template_path = String::from("./template");
     let mut input_path = String::from("./src");
@@ -57,7 +57,7 @@ Now, as specified, our output and template paths take default values from where 
 
 Using argparse, we can implement this cmdline interface as follows:
 #+name: high level interface
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Simple templating engine for html documents");
@@ -86,23 +86,23 @@ Now we've obtained the directory for the files to be stored, we can move on to t
 Fundamentaly the logic of this program can be split into two main components:
  - Recursively descending the source directory, keeping track of the file structure.
 #+name: modules 
-#+begin_src rust
-mod parser;
+#+begin_src rust :comments noweb
+mod crawler;
 #+end_src
  - Extracting the data from a given file
 #+name: modules 
-#+begin_src rust 
-mod crawler;
+#+begin_src rust :comments noweb
+mod parser;
 #+end_src
  - generate a compiled html file from the template and save it to a folder
 #+name: modules
-#+begin_src rust
+#+begin_src rust :comments noweb
 mod generator;
 #+end_src 
 
 Thus the high level execution of the system is as follows:
 #+name: high level interface
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 println!("{:?}", parser::parse_source_string("  \n#+template: simple\nbody: \\ Kiran is the best\\ \\¬¬\ntitle: We are the \\b best <champions></champions> ¬"));
 #+end_src
 
@@ -143,7 +143,7 @@ Where a parsing error will be one of the following:
  - **Invalid identifier** - if an identifier contains an invalid character.
  - **Unterminated Body** - if a body does not have a valid terminator.
 #+name: structures
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 #[derive(Debug)]
 pub enum ParseError {
    TemplateNotFound,
@@ -157,7 +157,7 @@ To do the parsing, first we start off by consuming the template directive, and f
 
 First, we check that the template contains a template directive - we're leaving resolving the template to a file to a later point.
 #+name: source parsing code
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 if !source.trim_left().starts_with("#+template:") {
    return Err(ParseError::TemplateNotFound);
 }
@@ -165,7 +165,7 @@ if !source.trim_left().starts_with("#+template:") {
 
 This means that if a source does not start with a directive, its parsing will fail:
 #+name: source parsing tests
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 #[test]
 fn must_start_with_template_directive() {
    assert!(parse_source_string("temp-justkidding\n id:\n #+template:\n").is_err());
@@ -174,13 +174,13 @@ fn must_start_with_template_directive() {
 
 After this check, we can safetly consume the first part of the string.
 #+name: source parsing code
-#+begin_src rust  :comments org
+#+begin_src rust  :comments noweb
 let source = source.trim_left().split_at(11).1;
 #+end_src
 
 Next, let's retrieve the actual template name - failing if it was not provided.
 #+name: source parsing code
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 let (raw_template_name, remaining_string) = split_at_pattern(source, "\n");
 let template_name = raw_template_name.trim();
 if template_name.is_empty() {
@@ -190,7 +190,7 @@ if template_name.is_empty() {
 
 This also means that if a source does not provide a template name its parsing will fail:
 #+name: source parsing tests
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 #[test]
 fn must_provide_template_name() {
     assert!(parse_source_string("#+template: example\n").is_ok());
@@ -205,12 +205,12 @@ fn must_provide_template_name() {
 Now, our remaining task is to simply iterate through the remaining ~ID: DATA~ pairs, and accumulate these values into a hashmap - let's begin
 by setting up an initial hashmap to store the files.
 #+name: source parsing code
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 let mut data : HashMap<String, String> = HashMap::new();
 #+end_src
 Next, we'll define a simple loop to do the accumulation - it will use a reference to the hashmap, and the source:
 #+name: source parsing code
-#+begin_src rust :comments org :noweb yes
+#+begin_src rust :comments noweb :noweb yes
 let mut completed = false;
 let mut source = remaining_string;
 let mut data = data;
@@ -222,7 +222,7 @@ while !completed {
 To extract the keys and bodies, we'll be using a regex - it checks that the start of the string consists of non terminator characters,
 followed by a colon.
 #+name: source parsing regexes
-#+begin_src rust :comments org :noweb yes
+#+begin_src rust :comments noweb :noweb yes
 let key_regex = Regex::new("^[^¬:]*:").unwrap();
 #+end_src
 
@@ -230,7 +230,7 @@ Now, inside the loop, we'll use the regex to extract the key values - for this p
 which operates like the ~split_at_pattern~ function but uses the first match of a regex to split the input.
 
 #+name: source parsing utility functions
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 fn split_at_regex<'a>(string: &'a str, pat: &Regex) -> (&'a str, &'a str) {
   if let Some(m) = pat.find(string) {
      string.split_at(m.end())
@@ -242,7 +242,7 @@ fn split_at_regex<'a>(string: &'a str, pat: &Regex) -> (&'a str, &'a str) {
 Now, using this function, we can implement the key extraction.
 
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 let (raw_key_name, remaining_string) = split_at_regex(source, &key_regex);
 let key_name = raw_key_name.trim();
 source = remaining_string;
@@ -250,7 +250,7 @@ source = remaining_string;
 
 Now due to the way we're extracting the values, bad input may lead to an incorrect parse - we'll try and avoid this by printing an error when the IDs are wrong:
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 if key_name.len() == 0 {
   eprintln!("Invalid parse, found empty/malformed ID tag");
   return Err(ParseError::InvalidIdentifier);
@@ -258,7 +258,7 @@ if key_name.len() == 0 {
 #+end_src
 Due to the way we extract the ids, we also end up bringing the colon as well. Let's just remove it before proceeding:
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 let mut key_name = key_name.to_string();
 key_name.pop();
 let key_name = key_name.trim();
@@ -266,7 +266,7 @@ let key_name = key_name.trim();
 
 Now we can move on to extracting the data. Let's start by defining a regular expression to isolate specific syntax we wish to capture.
 #+name: source parsing regexes
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 let data_regex = Regex::new("^(\\\\¬|([^¬\\\\]|\\\\[^¬])*)*¬").unwrap();
 #+end_src
 
@@ -297,7 +297,7 @@ NORMAL_CHARACTERS = ([^¬\\\\]|\\\\[^¬])*
 
 Using this regex we can trivially extract the data, repeating the code for key extraction.
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 let (raw_data, remaining_string) = split_at_regex(source, &data_regex);
 let src_data = raw_data.trim();
 source = remaining_string;
@@ -305,7 +305,7 @@ source = remaining_string;
 
 While it is fine for data to be empty, we always require the user to provide the end character, so the string should never be 0.
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 if src_data.len() == 0 {
   eprintln!("Invalid parse, found body with no terminating tag.");
   return Err(ParseError::UnterminatedBody);
@@ -314,7 +314,7 @@ if src_data.len() == 0 {
 
 Now, as before, let's remove the terminating character.
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 let mut src_data = src_data.to_string();
 src_data.pop();
 let src_data = src_data.trim();
@@ -322,13 +322,13 @@ let src_data = src_data.trim();
 
 Finally, now we've extracted the id and the tag, we can simply put the values into our hashmap.
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 data.insert(key_name.to_string(), src_data.to_string());
 #+end_src
 
 Now, we also need to check for a terminating condition - we'll do this by checking if the remaining string, when trimmed, is empty.
 #+name: source pairs loop
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 if source.trim().is_empty() {
     break;
 }
@@ -337,7 +337,7 @@ if source.trim().is_empty() {
 Finally, now that string has been consumed, we can simply return the template name and the populated hashmap.
 
 #+name: source parsing code
-#+begin_src rust :comments org :noweb yes
+#+begin_src rust :comments noweb :noweb yes
 Ok((template_name.to_string(), data))
 #+end_src
 
@@ -347,7 +347,7 @@ stdlib doesn't seem to provide.
 This utility function splits a string by the first occurance of a pattern returning a string up to the first occurrance 
 of the pattern and a string continuing from the pattern - the second string contains the text matching the pattern.
 #+name: source parsing utility functions
-#+begin_src rust :comments org
+#+begin_src rust :comments noweb
 fn split_at_pattern<'a>(string: &'a str, pat: &str) -> (&'a str, &'a str) {
   if let Some(ind) = string.find(pat) {
      string.split_at(ind)
@@ -360,9 +360,55 @@ fn split_at_pattern<'a>(string: &'a str, pat: &str) -> (&'a str, &'a str) {
 ** Crawler Logic
 The core logic for the crawler is to descend the input directory, keeping track of the current path, pass each file through the parser, then pass on the generated mapping to the generator, along with a corresponding template file and output file.
 
-#+begin_src rust :tangle src/crawler.rs :noweb yes :comments org
+We'll be importing the following libraries for doing the core logic.
+#+name: crawler imports
+#+begin_src rust :comments org
+use std::fs;
+use std::path::Path;
+#+end_src
+We'll also be bringing in the parsing function from the parser, and the generator function from the generator.
+#+name: crawler imports
+#+begin_src rust :comments org
+use parser::{parse_source_string,ParseError};
+use generator::generate_output;
 #+end_src
 
+The main structure for the crawler is as follows.
+#+begin_src rust :tangle src/crawler.rs :noweb yes :comments org
+<<crawler imports>>
+
+<<crawler structures>>
+
+<<crawler function>>
+#+end_src
+
+Our crawling function, takes as input the input directory, the output directory, the template directory.
+#+name: crawler function
+#+begin_src rust :noweb yes :comments org
+pub fn crawl_directories(output_string :&str, input_string: &str, template_path: &str) -> Result<u32,CrawlError> {
+<<crawler main logic>>
+}
+#+end_src
+
+The errors produced by the crawler are as follows.
+- *ParseError* - When a parser occurs
+- *GeneratorError* - when a generator occurs
+#+name: crawler structures
+#+begin_src rust :noweb yes :comments org
+pub enum CrawlError {
+  ParseError(ParseError),
+  GeneratorError
+}
+#+end_src
+
+
+Now, to code the main logic of the function.
+
+Oh wait, I'm bored, we'll do it later.
+#+name: crawler main logic
+#+begin_src rust :noweb yes :comments org
+Err(CrawlError::GeneratorError)
+#+end_src
 
 ** Generator Logic
 
