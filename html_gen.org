@@ -357,6 +357,67 @@ fn split_at_pattern<'a>(string: &'a str, pat: &str) -> (&'a str, &'a str) {
 }
 #+end_src
 
+** Generator Logic
+The generator takes in an input templated string and an associated mapping and returns a string in which the templates have been filled - it also takes in a paramter dictating how to respond to ill formed strings.
+
+We'll be importing the following libraries to make this thing work.
+#+name: generator imports
+#+begin_src rust :comments org
+use std::collections::HashMap;
+use regex::Regex;
+#+end_src
+
+The generator module follows the standard pattern.
+#+begin_src rust :tangle src/generator.rs :noweb yes :comments org
+<<generator imports>>
+<<generator structures>>
+<<generator utilities>>
+<<generator function>>
+#+end_src
+
+
+The main utility provided by the generator is the main function that populates the templated string when given a mapping, additionally we must specify how the generator should respond when missing templates are found.
+#+name: generator function
+#+begin_src rust :comments org :noweb yes
+pub fn generate_output(input: String, mapping: HashMap<String, String>, fail_response: GeneratorErrorStrategy) -> Result<String, GeneratorError> {
+ <<generator logic>>
+}
+#+end_src
+
+The strategies the generator should accept are:
+- *Fail* - Error out if a parameter that is not in the mapping is found in the template; this is the default.
+- *Ignore* - ignore any missing parameters.
+- *Fixed* - replace any missing parameters with a fixed response
+- *Default* - try a default mapping for the keyword, otherwise try one of the other strategies.
+To implement this, we'll use two structures, one to represent the non-recursive cases, and the other for the default option.
+#+name: generator structures
+#+begin_src rust :comments org 
+pub enum GeneratorErrorCoreStrategy {
+   Fail,
+   Ignore,
+   Fixed(String)
+}
+#+end_src
+Thus for the full enum, we can avoid having to mess with boxes.
+#+name: generator structures
+#+begin_src rust :comments org 
+pub enum GeneratorErrorStrategy {
+   Base(GeneratorErrorCoreStrategy),
+   Default(HashMap<String,String>, GeneratorErrorCoreStrategy)
+}
+#+end_src
+
+Now, the errors the templating function can return are partially based on the error response strategies.
+- *Undefined Parameter* - An error when a paremeter with no mapping is found, and the strategy is sufficiently strict.
+#+name: generator structures
+#+begin_src rust :comments org
+pub enum GeneratorError {
+  UndefinedParameter
+}
+#+end_src 
+
+
+
 ** Crawler Logic
 The core logic for the crawler is to descend the input directory, keeping track of the current path, pass each file through the parser, then pass on the generated mapping to the generator, along with a corresponding template file and output file.
 
@@ -408,10 +469,5 @@ Oh wait, I'm bored, we'll do it later.
 #+name: crawler main logic
 #+begin_src rust :noweb yes :comments org
 Err(CrawlError::GeneratorError)
-#+end_src
-
-** Generator Logic
-
-#+begin_src rust :tangle src/generator.rs :noweb yes :comments org
 #+end_src
 
