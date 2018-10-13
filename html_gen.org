@@ -417,6 +417,32 @@ pub enum GeneratorError {
 #+end_src 
 
 
+The core logic of the generator is to use capture groups capabilities provided by the regex crate.
+
+We'll reuse the same pattern as used in the parser, but wrap it in braces and capture the contents.
+#+name: generator logic
+#+begin_src rust :comments org
+let parameter_regex = Regex::new("\{(^[^¬:]*)\}");
+#+end_src 
+
+Next, we'll run the regex on the input string.
+#+name: generator logic
+#+begin_src rust :comments org :noweb yes
+let new_string = parameter_regex.replace_all(&input, |caps: &Captures| {
+<<generator replacement logic>>
+});
+#+end_src
+
+Once that's done we have the result string - it's a ~Cow<str>~ though, so we just need to do a conversion before returning it.
+#+name: generator logic
+#+begin_src rust :comments org
+new_string.to_owned()
+#+end_src
+
+All that's left is to define the replacement logic - our action depends on the error strategy we've chosen and whether the paremeter is in the mapping.
+
+
+
 
 ** Crawler Logic
 The core logic for the crawler is to descend the input directory, keeping track of the current path, pass each file through the parser, then pass on the generated mapping to the generator, along with a corresponding template file and output file.
