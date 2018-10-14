@@ -364,7 +364,7 @@ We'll be importing the following libraries to make this thing work.
 #+name: generator imports
 #+begin_src rust :comments org
 use std::collections::HashMap;
-use regex::Regex;
+use regex::{Regex, Captures};
 #+end_src
 
 The generator module follows the standard pattern.
@@ -398,6 +398,7 @@ pub enum GeneratorErrorCoreStrategy {
    Fixed(String)
 }
 #+end_src
+
 Thus for the full enum, we can avoid having to mess with boxes.
 #+name: generator structures
 #+begin_src rust :comments org 
@@ -422,26 +423,117 @@ The core logic of the generator is to use capture groups capabilities provided b
 We'll reuse the same pattern as used in the parser, but wrap it in braces and capture the contents.
 #+name: generator logic
 #+begin_src rust :comments org
-let parameter_regex = Regex::new("\{(^[^¬:]*)\}");
+let parameter_regex = Regex::new("\\{(^[^¬:]*)\\}").unwrap();
 #+end_src 
+
+Before we run the regex, we'll need to set up some variables to capture lookup errors.
+#+name: generator logic
+#+begin_src rust :comments org
+let mut lookup_failed = false;
+#+end_src 
+
 
 Next, we'll run the regex on the input string.
 #+name: generator logic
 #+begin_src rust :comments org :noweb yes
 let new_string = parameter_regex.replace_all(&input, |caps: &Captures| {
-<<generator replacement logic>>
+   <<generator replacement logic>>
 });
 #+end_src
+
+If a lookup failed, then we'll return an error.
+#+name: generator logic
+#+begin_src rust :comments org 
+if lookup_failed {
+   return Err(GeneratorError::UndefinedParameter);
+}
+#+end_src
+
 
 Once that's done we have the result string - it's a ~Cow<str>~ though, so we just need to do a conversion before returning it.
 #+name: generator logic
 #+begin_src rust :comments org
-new_string.to_owned()
+Ok(new_string.to_string())
 #+end_src
 
-All that's left is to define the replacement logic - our action depends on the error strategy we've chosen and whether the paremeter is in the mapping.
+All that's left is to define the replacement logic - if it matches, we can simply return the value stored in the hashmap. 
+#+name: generator replacement logic
+#+begin_src rust :comments org :noweb yes
+if let Some(value) = mapping.get(&caps[0]) {
+   value.to_owned()
+} else {
+   <<generator lookup failed>>  
+}
+#+end_src
+
+If the lookup failes, our action depends on the error strategy we've chosen.
+#+name: generator lookup failed
+#+begin_src rust :comments org :noweb yes
+match &fail_response {
+    GeneratorErrorStrategy::Base(strategy) => {
+        <<generator base strategy match>>
+    }
+    GeneratorErrorStrategy::Default(mapping, strategy) => {
+        <<generator default strategy>>
+    }
+}
+#+end_src
+
+For the base case, we simply match on the specific strategy chosen to decide our action.
+#+name: generator base strategy match
+#+begin_src rust :comments org :noweb yes 
+match strategy {
+  GeneratorErrorCoreStrategy::Fail => {
+      <<generator strategy fail case>>
+  }
+  GeneratorErrorCoreStrategy::Ignore => {
+      <<generator strategy ignore case>>
+  },
+  GeneratorErrorCoreStrategy::Fixed(text) => {
+      <<generators strategy fixed case>>
+  }
+}
+#+end_src
+
+If the strategy is a fail fast case, then we still return an empty string, but we set the lookup failed
+error, thereby ensuring that the result of the call is an error.
+#+name: generator strategy fail case
+#+begin_src rust :comments org
+lookup_failed = true;
+"".to_owned()
+#+end_src
+
+If the strategy is an ignore case, we simply leave the parameter as it was - (as our capture group automatically
+drops the outermost braces, we must insert them ourselves.
+#+name: generator strategy ignore case
+#+begin_src rust :comments org
+format!("{{{}}}",&caps[0])
+#+end_src
+
+For the fixed case, we just return the fixed string.
+#+name: generators strategy fixed case
+#+begin_src rust :comments org
+text.to_owned()
+#+end_src
 
 
+Now, for the default mapping case, we first check if the default mapping contains a value for the 
+parameter. If it does, we can simply return that value.
+#+name: generator default strategy
+#+begin_src rust :comments org :noweb yes
+if let Some(value) = mapping.get(&caps[0]) {
+   value.to_owned()
+} else {
+   <<generator default fail strategy>>  
+}
+#+end_src
+
+
+If it doesn't, we simply match on the error strategy as previous.
+#+name: generator default fail strategy
+#+begin_src rust :comments org :noweb yes
+<<generator base strategy match>>
+#+end_src
 
 
 ** Crawler Logic
