@@ -623,6 +623,7 @@ For each file, we need to check its metadata.
 #+begin_src rust :noweb yes :comments org
 let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
 let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+let input_file_name = input_file.file_name();
 #+end_src
 
 Now our next action is dependent on the type of entry - we'll need to do different things based on whether we find a file or a directory.
@@ -640,7 +641,7 @@ if input_metadata.is_dir() {
 Now, if the file is a directory, we do a recursive call, appending the directory name to the input path and output path 
 #+name: crawler directory logic
 #+begin_src rust :noweb yes :comments org
-let dir_name = Path::new(&input_file.file_name());
+let dir_name = Path::new(&input_file_name);
 let new_output_dir = output_directory
                      .as_ref()
                      .join(&dir_name);
@@ -661,7 +662,7 @@ On the other hand, if the file is just a file, we first need to read the file.
 #+begin_src rust :noweb yes :comments org
 let input_text = {
    let mut temp = String::new();
-   let file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   let mut file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
    file.read_to_string(&mut temp).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
    temp
 };
@@ -679,7 +680,7 @@ Now we need to read the template to a string.
 let template_path = template_path.as_ref().join(&Path::new(&template_name));
 let template_text = {
    let mut temp = String::new();
-   let file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+   let mut file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
    file.read_to_string(&mut temp).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
    temp
 };
@@ -699,7 +700,7 @@ Finally, we can write this to the output directory.
 #+name: crawler input file logic
 #+begin_src rust :noweb yes :comments org
 let output_path = 
-    output_directory.as_ref().join(&Path::new(&input_file.file_name()));
+    output_directory.as_ref().join(&Path::new(&input_file_name));
 fs::write(&output_path, result)
     .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
 file_count += 1;
