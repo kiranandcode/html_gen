@@ -103,7 +103,8 @@ mod generator;
 Thus the high level execution of the system is as follows:
 #+name: high level interface
 #+begin_src rust :comments noweb
-println!("{:?}", parser::parse_source_string("  \n#+template: simple\nbody: \\ Kiran is the best\\ \\¬¬\ntitle: We are the \\b best <champions></champions> ¬"));
+let (tname, mapping) = parser::parse_source_string("  \n#+template: simple\nbody: \\ Kiran is the best\\ \\¬¬\ntitle: We are the \\b best <champions></champions> ¬").unwrap();
+println!("{:?}", generator::generate_output("<html>{{body}}\\{<\\html>".to_string(), mapping, &generator::GeneratorErrorStrategy::Base(generator::GeneratorErrorCoreStrategy::Fail)));
 #+end_src
 
 
@@ -223,7 +224,7 @@ To extract the keys and bodies, we'll be using a regex - it checks that the star
 followed by a colon.
 #+name: source parsing regexes
 #+begin_src rust :comments noweb :noweb yes
-let key_regex = Regex::new("^[^¬:]*:").unwrap();
+let key_regex = Regex::new("^[^¬:{}\\\\]*:").unwrap();
 #+end_src
 
 Now, inside the loop, we'll use the regex to extract the key values - for this purpose, we'll define a custom ~split_by_regex~ function,
@@ -379,7 +380,7 @@ The generator module follows the standard pattern.
 The main utility provided by the generator is the main function that populates the templated string when given a mapping, additionally we must specify how the generator should respond when missing templates are found.
 #+name: generator function
 #+begin_src rust :comments org :noweb yes
-pub fn generate_output(input: String, mapping: HashMap<String, String>, fail_response: GeneratorErrorStrategy) -> Result<String, GeneratorError> {
+pub fn generate_output(input: String, mapping: HashMap<String, String>, fail_response: &GeneratorErrorStrategy) -> Result<String, GeneratorError> {
  <<generator logic>>
 }
 #+end_src
@@ -412,6 +413,7 @@ Now, the errors the templating function can return are partially based on the er
 - *Undefined Parameter* - An error when a paremeter with no mapping is found, and the strategy is sufficiently strict.
 #+name: generator structures
 #+begin_src rust :comments org
+#[derive(Debug)]
 pub enum GeneratorError {
   UndefinedParameter
 }
@@ -423,7 +425,7 @@ The core logic of the generator is to use capture groups capabilities provided b
 We'll reuse the same pattern as used in the parser, but wrap it in braces and capture the contents.
 #+name: generator logic
 #+begin_src rust :comments org
-let parameter_regex = Regex::new("\\{(^[^¬:]*)\\}").unwrap();
+let parameter_regex = Regex::new("\\{([^¬:{}\\\\]*)\\}").unwrap();
 #+end_src 
 
 Before we run the regex, we'll need to set up some variables to capture lookup errors.
@@ -459,8 +461,8 @@ Ok(new_string.to_string())
 All that's left is to define the replacement logic - if it matches, we can simply return the value stored in the hashmap. 
 #+name: generator replacement logic
 #+begin_src rust :comments org :noweb yes
-if let Some(value) = mapping.get(&caps[0]) {
-   value.to_owned()
+if let Some(value) = mapping.get(&caps[1]) {
+   value
 } else {
    <<generator lookup failed>>  
 }
@@ -500,20 +502,19 @@ error, thereby ensuring that the result of the call is an error.
 #+name: generator strategy fail case
 #+begin_src rust :comments org
 lookup_failed = true;
-"".to_owned()
+""
 #+end_src
 
-If the strategy is an ignore case, we simply leave the parameter as it was - (as our capture group automatically
-drops the outermost braces, we must insert them ourselves.
+If the strategy is an ignore case, we simply leave the parameter as it was.  
 #+name: generator strategy ignore case
 #+begin_src rust :comments org
-format!("{{{}}}",&caps[0])
+&caps[0]
 #+end_src
 
 For the fixed case, we just return the fixed string.
 #+name: generators strategy fixed case
 #+begin_src rust :comments org
-text.to_owned()
+text
 #+end_src
 
 
@@ -521,8 +522,8 @@ Now, for the default mapping case, we first check if the default mapping contain
 parameter. If it does, we can simply return that value.
 #+name: generator default strategy
 #+begin_src rust :comments org :noweb yes
-if let Some(value) = mapping.get(&caps[0]) {
-   value.to_owned()
+if let Some(value) = mapping.get(&caps[1]) {
+   value
 } else {
    <<generator default fail strategy>>  
 }
@@ -535,7 +536,6 @@ If it doesn't, we simply match on the error strategy as previous.
 <<generator base strategy match>>
 #+end_src
 
-
 ** Crawler Logic
 The core logic for the crawler is to descend the input directory, keeping track of the current path, pass each file through the parser, then pass on the generated mapping to the generator, along with a corresponding template file and output file.
 
@@ -543,13 +543,17 @@ We'll be importing the following libraries for doing the core logic.
 #+name: crawler imports
 #+begin_src rust :comments org
 use std::fs;
+use std::io::Read;
+use std::fs::File;
 use std::path::Path;
+use std::convert::AsRef;
 #+end_src
+
 We'll also be bringing in the parsing function from the parser, and the generator function from the generator.
 #+name: crawler imports
 #+begin_src rust :comments org
 use parser::{parse_source_string,ParseError};
-use generator::generate_output;
+use generator::{generate_output, GeneratorError, GeneratorErrorStrategy};
 #+end_src
 
 The main structure for the crawler is as follows.
@@ -561,10 +565,18 @@ The main structure for the crawler is as follows.
 <<crawler function>>
 #+end_src
 
-Our crawling function, takes as input the input directory, the output directory, the template directory.
+Our crawling function, takes as input the input directory, the output directory, the template directory and the error strategy for the generator.
 #+name: crawler function
 #+begin_src rust :noweb yes :comments org
-pub fn crawl_directories(output_string :&str, input_string: &str, template_path: &str) -> Result<u32,CrawlError> {
+pub fn crawl_directories<P,Q,R>(
+    output_directory: &P, 
+    input_directory: &Q, 
+    template_path: &R, 
+    err_strat: &GeneratorErrorStrategy
+) -> Result<u32,CrawlError> 
+ where P : AsRef<Path>,
+       Q : AsRef<Path>,
+       R : AsRef<Path> {
 <<crawler main logic>>
 }
 #+end_src
@@ -572,20 +584,131 @@ pub fn crawl_directories(output_string :&str, input_string: &str, template_path:
 The errors produced by the crawler are as follows.
 - *ParseError* - When a parser occurs
 - *GeneratorError* - when a generator occurs
+- *TemplateNotFound* - When a template is not found
+- *InputDirectoryError* - When the input directory does not exist
+- *OutputDirectoryError* - When the output directory does not exist
 #+name: crawler structures
 #+begin_src rust :noweb yes :comments org
 pub enum CrawlError {
   ParseError(ParseError),
-  GeneratorError
+  GeneratorError(GeneratorError),
+  TemplateNotFound(String),
+  InputDirectoryError,
+  OutputFileError(String),
+  InputFileError(String),
 }
 #+end_src
 
-
-Now, to code the main logic of the function.
-
-Oh wait, I'm bored, we'll do it later.
+Before we begin, let's set up a counter to enumerate the number of files converted.
 #+name: crawler main logic
 #+begin_src rust :noweb yes :comments org
-Err(CrawlError::GeneratorError)
+let mut file_count = 0;
+#+end_src
+
+First, we'll extract all the files in the input directory.
+#+name: crawler main logic
+#+begin_src rust :noweb yes :comments org
+let input_files = input_directory.as_ref()
+                  .read_dir()
+                  .map_err(|_| 
+                        CrawlError::InputDirectoryError
+                  )?;
+for input_file in input_files {
+   <<crawler file logic>>
+}
+#+end_src
+
+For each file, we need to check its metadata.
+#+name: crawler file logic
+#+begin_src rust :noweb yes :comments org
+let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+#+end_src
+
+Now our next action is dependent on the type of entry - we'll need to do different things based on whether we find a file or a directory.
+#+name: crawler file logic
+#+begin_src rust :noweb yes :comments org
+if input_metadata.is_dir() {
+    <<crawler directory logic>>
+} else if input_metadata.is_file() {
+    <<crawler input file logic>>
+} else {
+   eprintln!("Encountered a non-file file during crawling the input directory {:?}", input_file);
+}
+#+end_src
+
+Now, if the file is a directory, we do a recursive call, appending the directory name to the input path and output path 
+#+name: crawler directory logic
+#+begin_src rust :noweb yes :comments org
+let dir_name = Path::new(&input_file.file_name());
+let new_output_dir = output_directory
+                     .as_ref()
+                     .join(&dir_name);
+let new_input_dir = input_directory
+                    .as_ref()
+                    .join(&dir_name);
+let n_count = crawl_directories(
+    &new_output_dir, 
+    &new_input_dir, 
+    template_path, 
+    err_strat
+)?;
+file_count += n_count;
+#+end_src
+
+On the other hand, if the file is just a file, we first need to read the file.
+#+name: crawler input file logic
+#+begin_src rust :noweb yes :comments org
+let input_text = {
+   let mut temp = String::new();
+   let file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   file.read_to_string(&mut temp).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   temp
+};
+#+end_src
+
+Now we'll run the parser on this text.
+#+name: crawler input file logic
+#+begin_src rust :noweb yes :comments org
+let (template_name, mapping) = parse_source_string(&input_text).map_err(|e| CrawlError::ParseError(e))?;
+#+end_src
+
+Now we need to read the template to a string.
+#+name: crawler input file logic
+#+begin_src rust :noweb yes :comments org
+let template_path = template_path.as_ref().join(&Path::new(&template_name));
+let template_text = {
+   let mut temp = String::new();
+   let file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+   file.read_to_string(&mut temp).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+   temp
+};
+#+end_src
+
+With the template and the mapping, we can run the generator.
+#+name: crawler input file logic
+#+begin_src rust :noweb yes :comments org
+let result = generate_output(
+   template_text, 
+   mapping, 
+   err_strat
+).map_err(|e| CrawlError::GeneratorError(e))?;
+#+end_src
+
+Finally, we can write this to the output directory.
+#+name: crawler input file logic
+#+begin_src rust :noweb yes :comments org
+let output_path = 
+    output_directory.as_ref().join(&Path::new(&input_file.file_name()));
+fs::write(&output_path, result)
+    .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
+file_count += 1;
+#+end_src
+
+
+
+#+name: crawler main logic
+#+begin_src rust :noweb yes :comments org
+Ok(file_count)
 #+end_src
 
