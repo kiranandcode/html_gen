@@ -22,7 +22,11 @@ extern crate regex;
 ** Standard Library Imports
 We'll be using the path utilities provided by the standard library to help us navigate the filesystem in a cross platform way.
 #+begin_src rust :tangle src/main.rs :comments org
+use std::env;
 use std::path;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 #+end_src
 ** Module structure
 We'll be splitting up our codebase as follows:
@@ -49,15 +53,22 @@ fn main() {
 Now, as specified, our output and template paths take default values from where the application was instantiated.
 #+name: high level interface
 #+begin_src rust :comments noweb
-    let mut output_path = String::from("./bin");
-    let mut template_path = String::from("./template");
-    let mut input_path = String::from("./src");
+let mut output_path = String::from("./bin");
+let mut template_path = String::from("./template");
+let mut input_path = String::from("./src");
 #+end_src
+
+We'll also need to setup an error strategy - this will require some additional data structures, so we'll leave it to the end.
+#+name: high level interface
+#+begin_src rust :comments noweb :noweb yes
+<<high level error strategy>>
+#+end_src
+
 
 
 Using argparse, we can implement this cmdline interface as follows:
 #+name: high level interface
-#+begin_src rust :comments noweb
+#+begin_src rust :comments noweb :noweb yes
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Simple templating engine for html documents");
@@ -76,6 +87,7 @@ Using argparse, we can implement this cmdline interface as follows:
                     argparse::Store, "
                     directory in which the source files to be compiled are located");
 
+        <<high level error args>>
 
         ap.parse_args_or_exit();
     }
@@ -100,12 +112,28 @@ mod parser;
 mod generator;
 #+end_src 
 
-Thus the high level execution of the system is as follows:
+
+
 #+name: high level interface
 #+begin_src rust :comments noweb
-let (tname, mapping) = parser::parse_source_string("  \n#+template: simple\nbody: \\ Kiran is the best\\ \\¬¬\ntitle: We are the \\b best <champions></champions> ¬").unwrap();
-println!("{:?}", generator::generate_output("<html>{{body}}\\{<\\html>".to_string(), mapping, &generator::GeneratorErrorStrategy::Base(generator::GeneratorErrorCoreStrategy::Fail)));
+let output_directory = Path::new(&output_path);
+let input_directory = Path::new(&input_path);
+let template_directory = Path::new(&template_path);
 #+end_src
+
+Thus the high level execution of the system is as follows.
+First we update the error strategy.
+#+name: high level interface
+#+begin_src rust :comments noweb :noweb yes
+<<high level error update>>
+#+end_src
+
+Then we run the crawler and print the output. Done.
+#+name: high level interface
+#+begin_src rust :comments noweb
+println!("{:?}", crawler::crawl_directories(&output_directory, &input_directory, &template_directory, &err_strat));
+#+end_src
+
 
 
 ** Parser Logic
@@ -374,6 +402,13 @@ The generator module follows the standard pattern.
 <<generator structures>>
 <<generator utilities>>
 <<generator function>>
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   <<generator tests>>
+}
 #+end_src
 
 
@@ -393,6 +428,7 @@ The strategies the generator should accept are:
 To implement this, we'll use two structures, one to represent the non-recursive cases, and the other for the default option.
 #+name: generator structures
 #+begin_src rust :comments org 
+#[derive(Clone)]
 pub enum GeneratorErrorCoreStrategy {
    Fail,
    Ignore,
@@ -589,6 +625,7 @@ The errors produced by the crawler are as follows.
 - *OutputDirectoryError* - When the output directory does not exist
 #+name: crawler structures
 #+begin_src rust :noweb yes :comments org
+#[derive(Debug)]
 pub enum CrawlError {
   ParseError(ParseError),
   GeneratorError(GeneratorError),
@@ -713,3 +750,136 @@ file_count += 1;
 Ok(file_count)
 #+end_src
 
+
+* Error Strategy
+Now for the final part of the application - implementing the error strategy from before.
+
+Before we do anything, we'll need to extend the capabilities of a prior structure - specifically the GeneratorErrorCoreStrategy, and 
+the capability to parse the element from a string.
+#+name: generator structures
+#+begin_src rust :comments org :noweb yes
+impl FromStr for GeneratorErrorCoreStrategy {
+    type Err = ();
+    fn from_str(src: &str) -> Result<GeneratorErrorCoreStrategy, ()> {
+        return match src {
+            "fail" => Ok(GeneratorErrorCoreStrategy::Fail),
+            "ignore" => Ok(GeneratorErrorCoreStrategy::Ignore),
+            x => {
+                 if let Some(ind) = src.find("=") {
+                    if ind + 1 < src.len() {
+                        let (txt, rem) = src.split_at(ind+1);
+                        if txt == "fixed=" {
+                            Ok(GeneratorErrorCoreStrategy::Fixed(rem.to_string()))
+                        } else {
+                            Err(())
+                        }
+                    } else {
+                        Err(())
+                    }
+                 } else {
+                   Err(())
+                 }
+            },
+        };
+    }
+}
+#+end_src
+
+As you can see, we're referencing the ~FromStr~ trait which we'll need to import.
+#+name: generator imports
+#+begin_src rust :comments org
+use std::str::FromStr;
+#+end_src
+
+
+Now let's just quickly add some tests to verify this actually works.
+#+name: generator tests
+#+begin_src rust :comments org :noweb yes
+#[test]
+fn from_st_works() {
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("ignore"), Ok(Some(GeneratorErrorCoreStrategy::Ignore)));
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("fail"), Ok(Some(GeneratorErrorCoreStrategy::Fail)));
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(Some(GeneratorErrorCoreStrategy::Fixed("missing".to_string()))));
+}
+#+end_src
+
+
+Okay, now onto the topic of determining an error response strategy.
+
+We'll be doing this by splitting the concerns into two separate components - first identifying the core strategy and then identifying 
+the use of a default strategy or not.
+
+First for the core strategy, we'll set a default and then populate it.
+#+name: high level error strategy
+#+begin_src rust :comments org :noweb yes
+let mut opt_strat = generator::GeneratorErrorCoreStrategy::Fail;
+#+end_src
+
+Using the from string implementation we described earlier, we can parse this as follows.
+#+name: high level error args
+#+begin_src rust :comments org :noweb yes
+ap.refer(&mut opt_strat)
+  .add_option(&["-e", "--error"],
+              argparse::Store,
+              "Fail on the first undefined parameter");
+#+end_src
+
+For the default strategy we'll be using an optional value which we'll try and populate. If it isn't populated then we'll know that
+there is no default strategy.
+#+name: high level error strategy
+#+begin_src rust :comments org :noweb yes
+let mut def_strat = None;
+#+end_src
+
+Once again, for the default we'll just try and populate the string.
+#+name: high level error args
+#+begin_src rust :comments org :noweb yes
+ap.refer(&mut def_strat)
+  .add_option(&["-d", "--default"],
+              argparse::StoreOption,
+              "Additional mapping for storing default values");
+#+end_src
+
+If none was provided we'll try and retrieve it from the environment under the key ~GOP_HTML_DEFAULTS~.
+#+name: high level error update
+#+begin_src rust :comments org :noweb yes
+let def_strat = def_strat.or_else(|| env::var("GOP_HTML_DEFAULTS").ok());
+#+end_src
+
+Finally, we can construct the error strategy based on whether a default is provided.
+#+name: high level error update
+#+begin_src rust :comments org :noweb yes
+let err_strat = match def_strat {
+   None => 
+      generator::GeneratorErrorStrategy::Base(opt_strat),
+   Some(path) => {
+      let mapping = { 
+          <<error strategy retrieve mapping>> 
+      };
+      match mapping {
+        Some((name, map)) => 
+            generator::GeneratorErrorStrategy::Default(map, opt_strat), 
+        None => {
+            eprintln!("Encountered error while reading default mapping at {:?}.", path);
+            generator::GeneratorErrorStrategy::Base(opt_strat)
+        }
+      }
+   }
+};
+#+end_src
+
+Now all we've got to do is retrieve the mapping.
+#+name: error strategy retrieve mapping
+#+begin_src rust :comments org :noweb yes
+let def_path = Path::new(&path);
+if let Ok(mut file) = File::open(&def_path) {
+   let mut def_source = String::new();
+   if let Ok(_count) = file.read_to_string(&mut def_source) {
+       parser::parse_source_string(&def_source).ok()
+   } else {
+       None
+   }
+} else {
+    None
+}
+#+end_src
