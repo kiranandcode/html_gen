@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use regex::{Regex, Captures};
 use std::str::FromStr;
-#[derive(Clone)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum GeneratorErrorCoreStrategy {
    Fail,
    Ignore,
@@ -100,8 +100,9 @@ mod tests {
 
    #[test]
    fn from_st_works() {
-     assert_eq!(GeneratorErrorCoreStrategy::from_str("ignore"), Ok(Some(GeneratorErrorCoreStrategy::Ignore)));
-     assert_eq!(GeneratorErrorCoreStrategy::from_str("fail"), Ok(Some(GeneratorErrorCoreStrategy::Fail)));
-     assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(Some(GeneratorErrorCoreStrategy::Fixed("missing".to_string()))));
+     assert_eq!(GeneratorErrorCoreStrategy::from_str("ignore"), Ok(GeneratorErrorCoreStrategy::Ignore));
+     assert_eq!(GeneratorErrorCoreStrategy::from_str("fail"), Ok(GeneratorErrorCoreStrategy::Fail));
+     assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(GeneratorErrorCoreStrategy::Fixed("missing".to_string())));
    }
 }
+

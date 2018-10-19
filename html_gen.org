@@ -428,7 +428,7 @@ The strategies the generator should accept are:
 To implement this, we'll use two structures, one to represent the non-recursive cases, and the other for the default option.
 #+name: generator structures
 #+begin_src rust :comments org 
-#[derive(Clone)]
+#[derive(Clone,Debug,PartialEq)]
 pub enum GeneratorErrorCoreStrategy {
    Fail,
    Ignore,
@@ -797,9 +797,9 @@ Now let's just quickly add some tests to verify this actually works.
 #+begin_src rust :comments org :noweb yes
 #[test]
 fn from_st_works() {
-  assert_eq!(GeneratorErrorCoreStrategy::from_str("ignore"), Ok(Some(GeneratorErrorCoreStrategy::Ignore)));
-  assert_eq!(GeneratorErrorCoreStrategy::from_str("fail"), Ok(Some(GeneratorErrorCoreStrategy::Fail)));
-  assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(Some(GeneratorErrorCoreStrategy::Fixed("missing".to_string()))));
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("ignore"), Ok(GeneratorErrorCoreStrategy::Ignore));
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("fail"), Ok(GeneratorErrorCoreStrategy::Fail));
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(GeneratorErrorCoreStrategy::Fixed("missing".to_string())));
 }
 #+end_src
 
