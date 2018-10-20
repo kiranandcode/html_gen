@@ -106,7 +106,21 @@ Using argparse, we can implement this cmdline interface as follows:
 Following this, we  do some error checking to ensure that everything is suitably specified.
 #+name: high level interface
 #+begin_src rust :comments noweb :noweb yes
+let help_string = unsafe { String::from_utf8_unchecked(help_string) };
 
+if base_dir.is_none() && (output_path.is_none() || template_path.is_none() || input_path.is_none()) {
+   println!("{}", help_string);
+   ::std::process::exit(-1);
+}
+
+let (output_path, template_path, input_path) = if let Some(bd) = base_dir {
+    let output_path = output_path.unwrap_or_else(|| bd.clone().push_str("/bin");
+    let template_path = template_path.unwrap_or_else(|| bd.clone().push_str("/template");
+    let input_path = input_path.unwrap_or_else(|| bd.clone().push_str("/src");
+    (output_path, template_path, input_path)
+} else {
+    (output_path.unwrap(), template_path.unwrap(), input_path.unwrap())
+};
 #+end_src
 
 * Core Logic
