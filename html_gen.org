@@ -1,7 +1,10 @@
 * HtmlGen
-A simple little static templating engine for HTML.
-Coded using literate programming.
+A: "All I want is to template some files for a static site."
+B: "Oh, okay, that's simply, just install npm, and packages yarn,gulp,react,express........."
+A: "..."
 
+A simple little standalone static templating engine for HTML.
+Coded using literate programming.
 
 * Preamble
 While the overall nature of this project is quite simple - just a bit of file loading and exports, we can leverage rust's ecosystem to make our development a little easier.
@@ -27,6 +30,7 @@ use std::path;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::io::Write;
 #+end_src
 ** Module structure
 We'll be splitting up our codebase as follows:
@@ -34,7 +38,6 @@ We'll be splitting up our codebase as follows:
 #+begin_src rust :tangle src/main.rs :noweb yes :comments org
 <<modules>>
 #+end_src
-
 
 * Command Line Interface
 Clearly this project is going to be a command line application, as the static generator will need to parse a document and construct the components.
@@ -53,9 +56,10 @@ fn main() {
 Now, as specified, our output and template paths take default values from where the application was instantiated.
 #+name: high level interface
 #+begin_src rust :comments noweb
-let mut output_path = String::from("./bin");
-let mut template_path = String::from("./template");
-let mut input_path = String::from("./src");
+let mut output_path = String::from("bin");
+let mut template_path = String::from("template");
+let mut input_path = String::from("src");
+let mut base_dir : Option<String> = None;
 #+end_src
 
 We'll also need to setup an error strategy - this will require some additional data structures, so we'll leave it to the end.
@@ -69,28 +73,40 @@ We'll also need to setup an error strategy - this will require some additional d
 Using argparse, we can implement this cmdline interface as follows:
 #+name: high level interface
 #+begin_src rust :comments noweb :noweb yes
+    let mut help_string : Vec<u8> = Vec::new()
     {
         let mut ap = argparse::ArgumentParser::new();
         ap.set_description("Simple templating engine for html documents");
         ap.refer(&mut output_path)
         .add_option(&["-o","--output"], 
-                    argparse::Store, 
+                    argparse::StoreOption, 
                     "directory for the output files to be saved");
 
         ap.refer(&mut template_path)
         .add_option(&["-t","--template"], 
-                    argparse::Store, 
+                    argparse::StoreOption, 
                     "directory to be searched to find templates");
 
         ap.refer(&mut input_path)
         .add_option(&["-i","--input"], 
-                    argparse::Store, "
+                    argparse::StoreOption, "
                     directory in which the source files to be compiled are located");
+        
+        ap.refer(&mut base_dir)
+        .add_argument("BASEDIR", argparse::StoreOption, "the project directory - if not specified, then --input, --template and --output flags must be specified.");
 
         <<high level error args>>
+        
+        ap.print_help("htmlgen", &mut help_string);
 
         ap.parse_args_or_exit();
     }
+#+end_src
+
+Following this, we  do some error checking to ensure that everything is suitably specified.
+#+name: high level interface
+#+begin_src rust :comments noweb :noweb yes
+
 #+end_src
 
 * Core Logic
@@ -749,7 +765,6 @@ file_count += 1;
 #+begin_src rust :noweb yes :comments org
 Ok(file_count)
 #+end_src
-
 
 * Error Strategy
 Now for the final part of the application - implementing the error strategy from before.
