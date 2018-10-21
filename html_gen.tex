@@ -1,0 +1,1761 @@
+% Created 2018-10-21 Sun 21:07
+% Intended LaTeX compiler: pdflatex
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{grffile}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{textcomp}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage[cache=false]{minted}
+\usepackage{hyperref}
+\date{2018}
+\title{HTMLGEN: A HTML templating engine}
+\author{Gopiandcode}
+\hypersetup{
+ pdfauthor={},
+ pdftitle={HTMLGEN},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 26.1 (Org mode 9.1.14)}, 
+ pdflang={English}}
+
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+
+\section{HtmlGen}
+\label{sec:org815a168}
+Does the following sound familiar?
+\begin{quote}
+A: "All I want is to template some files for a static site."\newline
+B: "Oh, okay, that's simply, just install npm, and packages \newline
+yarn,gulp,react,express...".\newline
+A: "\ldots{}"
+\end{quote}
+
+Introducing HTMLGEN, a simple little standalone static templating engine for
+HTML. Coded using literate programming.
+
+\section{Usage}
+\label{sec:org3176d48}
+The command line interface for the program is as follows.
+\begin{verbatim}
+Usage:
+  htmlgen [OPTIONS] [BASEDIR]
+
+Simple templating engine for html documents
+
+Positional arguments:
+  BASEDIR               The project directory. If not specified, then --input,
+                        --template and --output flags must be given.
+
+Optional arguments:
+  -h,--help             Show this help message and exit
+  -o,--output OUTPUT    Directory for the output files to be saved. It defaults
+                        to BASEDIR/bin
+  -t,--template TEMPLATE
+                        Directory to be searched to find templates. It defaults
+                        to BASEDIR/template
+  -i,--input INPUT      Directory in which the source files to be compiled are
+                        located. It defaults to BASEDIR/bin
+  -e,--error ERROR      Fail on the first undefined parameter
+  -d,--default DEFAULT  Additional mapping for storing default values. If not 
+                        specified, the environment variable GOP_HTML_DEFAULTS
+                        if defined, is used as a default.
+\end{verbatim}
+
+\section{Preamble}
+\label{sec:orge9ec8dc}
+While the overall nature of this project is quite simple - just a bit of file loading and exports, we can leverage rust's ecosystem to make our development a little easier.
+
+\subsection{Crates}
+\label{sec:org66f8864}
+The crates we'll be using are as follows:
+\begin{itemize}
+\item \textbf{ArgParse} - This is a crate that I used a while back when making another command line application. It provides a very nice rustic interface over a library which produces command line interfaces compliant with most unix/linux standards.
+\end{itemize}
+an old fashioned regex.
+\begin{minted}[breaklines]{rust}
+extern crate argparse;
+\end{minted}
+
+\begin{itemize}
+\item \textbf{Regex} - We'll be taking advantage of this regex crate to make the parsing phase a little easier; while the stdlib provides some pretty useful string matching utilities, they don't quite match up to
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+extern crate regex;
+\end{minted}
+
+\subsection{Standard Library Imports}
+\label{sec:orgcdab800}
+We'll be using the path utilities provided by the standard library to help us navigate the filesystem in a cross platform way.
+\begin{minted}[breaklines]{rust}
+use std::env;
+use std::path;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
+use std::io::Write;
+\end{minted}
+\subsection{Module structure}
+\label{sec:org954d78c}
+We'll be splitting up our codebase as follows:
+
+\begin{minted}[breaklines]{rust}
+mod crawler;
+mod parser;
+mod generator;
+\end{minted}
+
+\section{Command Line Interface}
+\label{sec:org6938d27}
+Clearly this project is going to be a command line application, as the static generator will need to parse a document and construct the components.
+
+Using argparse - as imported in the preamble, we'll design a sweet and sexy interface to access our application. The main actions we'll allow a user to perform using this application will be as follows:
+\begin{itemize}
+\item \textbf{specify output folder} - by default the output of the compiled files are placed in \texttt{./bin/} dir, which is made if it does not exist.
+\item \textbf{specify template folder} - within a non-templated file, when a template reference is used, by default the application searches the 
+\texttt{./template/} dir to resolve these references.
+\item \textbf{specify input folder} - by default the program searches \texttt{./src/} for the source files to be compiled
+\end{itemize}
+
+\begin{minted}[breaklines]{rust}
+fn main() {
+ let mut output_path = String::from("");
+ let mut template_path = String::from("");
+ let mut input_path = String::from("");
+ let mut base_dir : Option<String> = None;
+ // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20strategy][high level error strategy]]
+ let mut opt_strat = generator::GeneratorErrorCoreStrategy::Fail;
+ // high level error strategy ends here
+ // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20strategy][high level error strategy]]
+ let mut def_strat = None;
+ // high level error strategy ends here
+ let mut help_string : Vec<u8> = Vec::new();
+ {
+     let mut ap = argparse::ArgumentParser::new();
+     ap.set_description("Simple templating engine for html documents");
+     ap.refer(&mut output_path)
+     .add_option(&["-o","--output"], 
+                 argparse::Store, 
+                 "Directory for the output files to be saved. It defaults to BASEDIR/bin");
+
+     ap.refer(&mut template_path)
+     .add_option(&["-t","--template"], 
+                 argparse::Store, 
+                 "Directory to be searched to find templates. It defaults to BASEDIR/template");
+
+     ap.refer(&mut input_path)
+     .add_option(&["-i","--input"], 
+                 argparse::Store, 
+                 "Directory in which the source files to be compiled are located. It defaults to BASEDIR/bin");
+
+     ap.refer(&mut base_dir)
+     .add_argument("BASEDIR", 
+           argparse::StoreOption, 
+           "The project directory. If not specified, then --input, --template and --output flags must be given. ");
+
+     // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20args][high level error args]]
+     ap.refer(&mut opt_strat)
+       .add_option(&["-e", "--error"],
+                   argparse::Store,
+                   "Fail on the first undefined parameter");
+     // high level error args ends here
+     // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20args][high level error args]]
+     ap.refer(&mut def_strat)
+       .add_option(&["-d", "--default"],
+                   argparse::StoreOption,
+                   "Additional mapping for storing default values. If not specified, the environment variable GOP_HTML_DEFAULTS if defined, is used as a default.");
+     // high level error args ends here
+
+     ap.print_help("htmlgen", &mut help_string);
+
+     ap.parse_args_or_exit();
+ }
+ let help_string = unsafe { String::from_utf8_unchecked(help_string) };
+ let mut output_path = if output_path.is_empty() { None } else { Some(output_path) };
+ let mut template_path = if template_path.is_empty() { None } else { Some(template_path) };
+ let mut input_path = if input_path.is_empty() { None } else { Some(input_path) };
+ if base_dir.is_none() && (output_path.is_none() || template_path.is_none() || input_path.is_none()) {
+    println!("{}", help_string);
+    ::std::process::exit(-1);
+ }
+ let (output_path, template_path, input_path) = if let Some(bd) = base_dir {
+     let bd = Path::new(&bd);
+     let error_string = format!("{:?} is not a valid path", bd);
+     let alt_output_path = bd.join(Path::new(&"bin")).to_str().expect(&error_string).to_owned();
+     let alt_template_path = bd.join(Path::new(&"template")).to_str().expect(&error_string).to_owned();
+     let alt_input_path = bd.join(Path::new(&"src")).to_str().expect(&error_string).to_owned();
+
+     let output_path = output_path.unwrap_or_else(|| alt_output_path );
+     let template_path = template_path.unwrap_or_else(|| alt_template_path );
+     let input_path = input_path.unwrap_or_else(|| alt_input_path );
+
+     (output_path, template_path, input_path)
+ } else {
+     (output_path.unwrap(), template_path.unwrap(), input_path.unwrap())
+ };
+ let output_directory = Path::new(&output_path);
+ let input_directory = Path::new(&input_path);
+ let template_directory = Path::new(&template_path);
+ // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20update][high level error update]]
+ let def_strat = def_strat.or_else(|| env::var("GOP_HTML_DEFAULTS").ok());
+ // high level error update ends here
+ // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20update][high level error update]]
+ let err_strat = match def_strat {
+    None => 
+       generator::GeneratorErrorStrategy::Base(opt_strat),
+    Some(path) => {
+       let mapping = { 
+           let def_path = Path::new(&path);
+           if let Ok(mut file) = File::open(&def_path) {
+              let mut def_source = String::new();
+              if let Ok(_count) = file.read_to_string(&mut def_source) {
+                  parser::parse_source_string(&def_source).ok()
+              } else {
+                  None
+              }
+           } else {
+               None
+           } 
+       };
+       match mapping {
+         Some((name, map)) => 
+             generator::GeneratorErrorStrategy::Default(map, opt_strat), 
+         None => {
+             eprintln!("Encountered error while reading default mapping at {:?}.", path);
+             generator::GeneratorErrorStrategy::Base(opt_strat)
+         }
+       }
+    }
+ };
+ // high level error update ends here
+ println!("{:?}", crawler::crawl_directories(&output_directory, &input_directory, &template_directory, &err_strat));
+}
+\end{minted}
+
+We'll set up some initial variables to hold the parameters from the command line.
+\begin{minted}[breaklines]{rust}
+let mut output_path = String::from("");
+let mut template_path = String::from("");
+let mut input_path = String::from("");
+let mut base_dir : Option<String> = None;
+\end{minted}
+
+We'll also need to setup an error strategy - this will require some additional data structures, so we'll leave it to the end.
+\begin{minted}[breaklines]{rust}
+// [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20strategy][high level error strategy]]
+let mut opt_strat = generator::GeneratorErrorCoreStrategy::Fail;
+// high level error strategy ends here
+// [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20strategy][high level error strategy]]
+let mut def_strat = None;
+// high level error strategy ends here
+\end{minted}
+
+
+
+Using argparse, we can implement this cmdline interface as follows:
+\begin{minted}[breaklines]{rust}
+let mut help_string : Vec<u8> = Vec::new();
+{
+    let mut ap = argparse::ArgumentParser::new();
+    ap.set_description("Simple templating engine for html documents");
+    ap.refer(&mut output_path)
+    .add_option(&["-o","--output"], 
+                argparse::Store, 
+                "Directory for the output files to be saved. It defaults to BASEDIR/bin");
+
+    ap.refer(&mut template_path)
+    .add_option(&["-t","--template"], 
+                argparse::Store, 
+                "Directory to be searched to find templates. It defaults to BASEDIR/template");
+
+    ap.refer(&mut input_path)
+    .add_option(&["-i","--input"], 
+                argparse::Store, 
+                "Directory in which the source files to be compiled are located. It defaults to BASEDIR/bin");
+
+    ap.refer(&mut base_dir)
+    .add_argument("BASEDIR", 
+          argparse::StoreOption, 
+          "The project directory. If not specified, then --input, --template and --output flags must be given. ");
+
+    // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20args][high level error args]]
+    ap.refer(&mut opt_strat)
+      .add_option(&["-e", "--error"],
+                  argparse::Store,
+                  "Fail on the first undefined parameter");
+    // high level error args ends here
+    // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20args][high level error args]]
+    ap.refer(&mut def_strat)
+      .add_option(&["-d", "--default"],
+                  argparse::StoreOption,
+                  "Additional mapping for storing default values. If not specified, the environment variable GOP_HTML_DEFAULTS if defined, is used as a default.");
+    // high level error args ends here
+
+    ap.print_help("htmlgen", &mut help_string);
+
+    ap.parse_args_or_exit();
+}
+\end{minted}
+
+Before we do anything, let's get a copy of the help string generated by \texttt{argparse} for the program.
+\begin{minted}[breaklines]{rust}
+let help_string = unsafe { String::from_utf8_unchecked(help_string) };
+\end{minted}
+
+Additionally, we'll convert the unwritten values to options.
+\begin{minted}[breaklines]{rust}
+let mut output_path = if output_path.is_empty() { None } else { Some(output_path) };
+let mut template_path = if template_path.is_empty() { None } else { Some(template_path) };
+let mut input_path = if input_path.is_empty() { None } else { Some(input_path) };
+\end{minted}
+
+Following this, we  do some error checking to ensure that everything is suitably specified.
+If the base directory is not specified, then all other parameters must be specified - otherwise we exit.
+\begin{minted}[breaklines]{rust}
+if base_dir.is_none() && (output_path.is_none() || template_path.is_none() || input_path.is_none()) {
+   println!("{}", help_string);
+   ::std::process::exit(-1);
+}
+\end{minted}
+
+With that done, we can safely extract the paths.
+As specified, our output and template paths take default values from the supplied \texttt{BASEDIR}.
+\begin{minted}[breaklines]{rust}
+let (output_path, template_path, input_path) = if let Some(bd) = base_dir {
+    let bd = Path::new(&bd);
+    let error_string = format!("{:?} is not a valid path", bd);
+    let alt_output_path = bd.join(Path::new(&"bin")).to_str().expect(&error_string).to_owned();
+    let alt_template_path = bd.join(Path::new(&"template")).to_str().expect(&error_string).to_owned();
+    let alt_input_path = bd.join(Path::new(&"src")).to_str().expect(&error_string).to_owned();
+
+    let output_path = output_path.unwrap_or_else(|| alt_output_path );
+    let template_path = template_path.unwrap_or_else(|| alt_template_path );
+    let input_path = input_path.unwrap_or_else(|| alt_input_path );
+
+    (output_path, template_path, input_path)
+} else {
+    (output_path.unwrap(), template_path.unwrap(), input_path.unwrap())
+};
+\end{minted}
+
+\section{Core Logic}
+\label{sec:orgaaa8178}
+Now we've obtained the directory for the files to be stored, we can move on to the main logic of the program.
+Fundamentaly the logic of this program can be split into two main components:
+\begin{itemize}
+\item Recursively descending the source directory, keeping track of the file structure.
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+mod crawler;
+\end{minted}
+\begin{itemize}
+\item Extracting the data from a given file
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+mod parser;
+\end{minted}
+\begin{itemize}
+\item generate a compiled html file from the template and save it to a folder
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+mod generator;
+\end{minted}
+
+
+
+\begin{minted}[breaklines]{rust}
+let output_directory = Path::new(&output_path);
+let input_directory = Path::new(&input_path);
+let template_directory = Path::new(&template_path);
+\end{minted}
+
+Thus the high level execution of the system is as follows.
+First we update the error strategy.
+\begin{minted}[breaklines]{rust}
+// [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20update][high level error update]]
+let def_strat = def_strat.or_else(|| env::var("GOP_HTML_DEFAULTS").ok());
+// high level error update ends here
+// [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20update][high level error update]]
+let err_strat = match def_strat {
+   None => 
+      generator::GeneratorErrorStrategy::Base(opt_strat),
+   Some(path) => {
+      let mapping = { 
+          let def_path = Path::new(&path);
+          if let Ok(mut file) = File::open(&def_path) {
+             let mut def_source = String::new();
+             if let Ok(_count) = file.read_to_string(&mut def_source) {
+                 parser::parse_source_string(&def_source).ok()
+             } else {
+                 None
+             }
+          } else {
+              None
+          } 
+      };
+      match mapping {
+        Some((name, map)) => 
+            generator::GeneratorErrorStrategy::Default(map, opt_strat), 
+        None => {
+            eprintln!("Encountered error while reading default mapping at {:?}.", path);
+            generator::GeneratorErrorStrategy::Base(opt_strat)
+        }
+      }
+   }
+};
+// high level error update ends here
+\end{minted}
+
+Then we run the crawler and print the output. Done.
+\begin{minted}[breaklines]{rust}
+println!("{:?}", crawler::crawl_directories(&output_directory, &input_directory, &template_directory, &err_strat));
+\end{minted}
+
+
+
+\subsection{Parser Logic}
+\label{sec:orgb4328f2}
+Before we begin, we'll need the following packages in our parser:
+\begin{minted}[breaklines]{rust}
+use std::collections::HashMap;
+use regex::Regex;
+#[derive(Debug)]
+pub enum ParseError {
+   TemplateNotFound,
+   InvalidIdentifier,
+   UnterminatedBody
+}
+\end{minted}
+Once again, our core specification for the parser is to extract a set of key value pairs. Our syntax will be of the following form:
+\begin{minted}[breaklines]{rust}
+ID := (Sigma/{:, (, )})+
+INTRO := #+template: Sigma+\n
+MAPPING := ID:  ((SIGMA/{¬})|\¬)* ¬
+DOCUMENT := INTRO MAPPING*
+\end{minted}
+Our parser will take in a string (the contents of the file), and return either a hashmap of values and a template name, or an error.
+\begin{minted}[breaklines]{rust}
+fn split_at_regex<'a>(string: &'a str, pat: &Regex) -> (&'a str, &'a str) {
+  if let Some(m) = pat.find(string) {
+     string.split_at(m.end())
+  } else {
+     (&"", string)
+  }
+}
+fn split_at_pattern<'a>(string: &'a str, pat: &str) -> (&'a str, &'a str) {
+  if let Some(ind) = string.find(pat) {
+     string.split_at(ind)
+  } else {
+     (&"", string)
+  }
+}
+
+pub fn parse_source_string(source: &str) 
+   -> Result<(String, HashMap<String,String>),ParseError> {
+let key_regex = Regex::new("^[^¬:{}\\\\]*:").unwrap();
+let data_regex = Regex::new("^(\\\\¬|([^¬\\\\]|\\\\[^¬])*)*¬").unwrap();
+if !source.trim_left().starts_with("#+template:") {
+   return Err(ParseError::TemplateNotFound);
+}
+let source = source.trim_left().split_at(11).1;
+let (raw_template_name, remaining_string) = split_at_pattern(source, "\n");
+let template_name = raw_template_name.trim();
+if template_name.is_empty() {
+   return Err(ParseError::TemplateNotFound);
+}
+let mut data : HashMap<String, String> = HashMap::new();
+let mut completed = false;
+let mut source = remaining_string;
+let mut data = data;
+
+while !completed {
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let (raw_key_name, remaining_string) = split_at_regex(source, &key_regex);
+   let key_name = raw_key_name.trim();
+   source = remaining_string;
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   if key_name.len() == 0 {
+     eprintln!("Invalid parse, found empty/malformed ID tag");
+     return Err(ParseError::InvalidIdentifier);
+   }
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let mut key_name = key_name.to_string();
+   key_name.pop();
+   let key_name = key_name.trim();
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let (raw_data, remaining_string) = split_at_regex(source, &data_regex);
+   let src_data = raw_data.trim();
+   source = remaining_string;
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   if src_data.len() == 0 {
+     eprintln!("Invalid parse, found body with no terminating tag.");
+     return Err(ParseError::UnterminatedBody);
+   }
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let mut src_data = src_data.to_string();
+   src_data.pop();
+   let src_data = src_data.trim();
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   data.insert(key_name.to_string(), src_data.to_string());
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   if source.trim().is_empty() {
+       break;
+   }
+   // source pairs loop ends here
+}
+Ok((template_name.to_string(), data))
+}
+
+#[cfg(test)]
+mod test {
+   use super::*;
+
+  #[test]
+  fn must_start_with_template_directive() {
+     assert!(parse_source_string("temp-justkidding\n id:\n #+template:\n").is_err());
+  }
+  #[test]
+  fn must_provide_template_name() {
+      assert!(parse_source_string("#+template: example\n").is_ok());
+      assert!(parse_source_string("#+template:\n").is_err());
+      assert!(parse_source_string("#+template:    \n").is_err());
+      assert!(parse_source_string("#+template:   \n  \n").is_err());
+      assert!(parse_source_string("#+template:   \t  \n").is_err());
+  }
+}
+\end{minted}
+Where a parsing error will be one of the following:
+\begin{itemize}
+\item \textbf{\textbf{Template not found}} - if the source file does not specify a template to be loaded
+\item \textbf{\textbf{Invalid identifier}} - if an identifier contains an invalid character.
+\item \textbf{\textbf{Unterminated Body}} - if a body does not have a valid terminator.
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+#[derive(Debug)]
+pub enum ParseError {
+   TemplateNotFound,
+   InvalidIdentifier,
+   UnterminatedBody
+}
+\end{minted}
+For simplicity, we're making the parser as general as possible and opting to make failure as unlikely as possible.
+
+To do the parsing, first we start off by consuming the template directive, and failing if not present.
+
+First, we check that the template contains a template directive - we're leaving resolving the template to a file to a later point.
+\begin{minted}[breaklines]{rust}
+if !source.trim_left().starts_with("#+template:") {
+   return Err(ParseError::TemplateNotFound);
+}
+\end{minted}
+
+This means that if a source does not start with a directive, its parsing will fail:
+\begin{minted}[breaklines]{rust}
+#[test]
+fn must_start_with_template_directive() {
+   assert!(parse_source_string("temp-justkidding\n id:\n #+template:\n").is_err());
+}
+\end{minted}
+
+After this check, we can safetly consume the first part of the string.
+\begin{minted}[breaklines]{rust}
+let source = source.trim_left().split_at(11).1;
+\end{minted}
+
+Next, let's retrieve the actual template name - failing if it was not provided.
+\begin{minted}[breaklines]{rust}
+let (raw_template_name, remaining_string) = split_at_pattern(source, "\n");
+let template_name = raw_template_name.trim();
+if template_name.is_empty() {
+   return Err(ParseError::TemplateNotFound);
+}
+\end{minted}
+
+This also means that if a source does not provide a template name its parsing will fail:
+\begin{minted}[breaklines]{rust}
+#[test]
+fn must_provide_template_name() {
+    assert!(parse_source_string("#+template: example\n").is_ok());
+    assert!(parse_source_string("#+template:\n").is_err());
+    assert!(parse_source_string("#+template:    \n").is_err());
+    assert!(parse_source_string("#+template:   \n  \n").is_err());
+    assert!(parse_source_string("#+template:   \t  \n").is_err());
+}
+\end{minted}
+
+
+Now, our remaining task is to simply iterate through the remaining \texttt{ID: DATA} pairs, and accumulate these values into a hashmap - let's begin
+by setting up an initial hashmap to store the files.
+\begin{minted}[breaklines]{rust}
+let mut data : HashMap<String, String> = HashMap::new();
+\end{minted}
+Next, we'll define a simple loop to do the accumulation - it will use a reference to the hashmap, and the source:
+\begin{minted}[breaklines]{rust}
+let mut completed = false;
+let mut source = remaining_string;
+let mut data = data;
+
+while !completed {
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let (raw_key_name, remaining_string) = split_at_regex(source, &key_regex);
+   let key_name = raw_key_name.trim();
+   source = remaining_string;
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   if key_name.len() == 0 {
+     eprintln!("Invalid parse, found empty/malformed ID tag");
+     return Err(ParseError::InvalidIdentifier);
+   }
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let mut key_name = key_name.to_string();
+   key_name.pop();
+   let key_name = key_name.trim();
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let (raw_data, remaining_string) = split_at_regex(source, &data_regex);
+   let src_data = raw_data.trim();
+   source = remaining_string;
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   if src_data.len() == 0 {
+     eprintln!("Invalid parse, found body with no terminating tag.");
+     return Err(ParseError::UnterminatedBody);
+   }
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   let mut src_data = src_data.to_string();
+   src_data.pop();
+   let src_data = src_data.trim();
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   data.insert(key_name.to_string(), src_data.to_string());
+   // source pairs loop ends here
+   // [[file:~/Documents/html_gen/html_gen.org::source%20pairs%20loop][source pairs loop]]
+   if source.trim().is_empty() {
+       break;
+   }
+   // source pairs loop ends here
+}
+\end{minted}
+To extract the keys and bodies, we'll be using a regex - it checks that the start of the string consists of non terminator characters,
+followed by a colon.
+\begin{minted}[breaklines]{rust}
+let key_regex = Regex::new("^[^¬:{}\\\\]*:").unwrap();
+\end{minted}
+
+Now, inside the loop, we'll use the regex to extract the key values - for this purpose, we'll define a custom \texttt{split\_by\_regex} function,
+which operates like the \texttt{split\_at\_pattern} function but uses the first match of a regex to split the input.
+
+\begin{minted}[breaklines]{rust}
+fn split_at_regex<'a>(string: &'a str, pat: &Regex) -> (&'a str, &'a str) {
+  if let Some(m) = pat.find(string) {
+     string.split_at(m.end())
+  } else {
+     (&"", string)
+  }
+}
+\end{minted}
+Now, using this function, we can implement the key extraction.
+
+\begin{minted}[breaklines]{rust}
+let (raw_key_name, remaining_string) = split_at_regex(source, &key_regex);
+let key_name = raw_key_name.trim();
+source = remaining_string;
+\end{minted}
+
+Now due to the way we're extracting the values, bad input may lead to an incorrect parse - we'll try and avoid this by printing an error when the IDs are wrong:
+\begin{minted}[breaklines]{rust}
+if key_name.len() == 0 {
+  eprintln!("Invalid parse, found empty/malformed ID tag");
+  return Err(ParseError::InvalidIdentifier);
+}
+\end{minted}
+Due to the way we extract the ids, we also end up bringing the colon as well. Let's just remove it before proceeding:
+\begin{minted}[breaklines]{rust}
+let mut key_name = key_name.to_string();
+key_name.pop();
+let key_name = key_name.trim();
+\end{minted}
+
+Now we can move on to extracting the data. Let's start by defining a regular expression to isolate specific syntax we wish to capture.
+\begin{minted}[breaklines]{rust}
+let data_regex = Regex::new("^(\\\\¬|([^¬\\\\]|\\\\[^¬])*)*¬").unwrap();
+\end{minted}
+
+The regex we're using can be explained as follows; the outermost kleene closure captures the main constraint that the data should start from the start of the string and end at the first occurrance
+of a terminating character.
+\begin{minted}[breaklines]{rust}
+^ INTERNALS *¬
+\end{minted}
+
+Next, for the contents of a body, we have to capture 2 main cases:
+\begin{itemize}
+\item When the character is normal and non interesting
+\item When the character is an escaped terminator.
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+INTERNALS ::= (ESCAPED_TERMINATOR|NORMAL_CHARACTERS)
+\end{minted}
+
+For the escaped terminator case, we simply match on a backspace followed by a terminator.
+\begin{minted}[breaklines]{rust}
+ESCAPED_TERMINATOR = \¬
+\end{minted}
+
+In the case of normal characters, either 
+\begin{itemize}
+\item the character is neither a backslash or a terminator
+\item the character is a backslash and is followed by anything other than a terminator
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+NORMAL_CHARACTERS = ([^¬\\\\]|\\\\[^¬])*
+\end{minted}
+
+Using this regex we can trivially extract the data, repeating the code for key extraction.
+\begin{minted}[breaklines]{rust}
+let (raw_data, remaining_string) = split_at_regex(source, &data_regex);
+let src_data = raw_data.trim();
+source = remaining_string;
+\end{minted}
+
+While it is fine for data to be empty, we always require the user to provide the end character, so the string should never be 0.
+\begin{minted}[breaklines]{rust}
+if src_data.len() == 0 {
+  eprintln!("Invalid parse, found body with no terminating tag.");
+  return Err(ParseError::UnterminatedBody);
+}
+\end{minted}
+
+Now, as before, let's remove the terminating character.
+\begin{minted}[breaklines]{rust}
+let mut src_data = src_data.to_string();
+src_data.pop();
+let src_data = src_data.trim();
+\end{minted}
+
+Finally, now we've extracted the id and the tag, we can simply put the values into our hashmap.
+\begin{minted}[breaklines]{rust}
+data.insert(key_name.to_string(), src_data.to_string());
+\end{minted}
+
+Now, we also need to check for a terminating condition - we'll do this by checking if the remaining string, when trimmed, is empty.
+\begin{minted}[breaklines]{rust}
+if source.trim().is_empty() {
+    break;
+}
+\end{minted}
+
+Finally, now that string has been consumed, we can simply return the template name and the populated hashmap.
+
+\begin{minted}[breaklines]{rust}
+Ok((template_name.to_string(), data))
+\end{minted}
+
+Aside: Notice, that during the parsing, we're using our own custom function to allow us to split by a pattern, a feature the
+stdlib doesn't seem to provide.
+
+This utility function splits a string by the first occurance of a pattern returning a string up to the first occurrance 
+of the pattern and a string continuing from the pattern - the second string contains the text matching the pattern.
+\begin{minted}[breaklines]{rust}
+fn split_at_pattern<'a>(string: &'a str, pat: &str) -> (&'a str, &'a str) {
+  if let Some(ind) = string.find(pat) {
+     string.split_at(ind)
+  } else {
+     (&"", string)
+  }
+}
+\end{minted}
+
+\subsection{Generator Logic}
+\label{sec:org7ecb46d}
+The generator takes in an input templated string and an associated mapping and returns a string in which the templates have been filled - it also takes in a paramter dictating how to respond to ill formed strings.
+
+We'll be importing the following libraries to make this thing work.
+\begin{minted}[breaklines]{rust}
+use std::collections::HashMap;
+use regex::{Regex, Captures};
+\end{minted}
+
+The generator module follows the standard pattern.
+\begin{minted}[breaklines]{rust}
+use std::collections::HashMap;
+use regex::{Regex, Captures};
+use std::str::FromStr;
+#[derive(Clone,Debug,PartialEq)]
+pub enum GeneratorErrorCoreStrategy {
+   Fail,
+   Ignore,
+   Fixed(String)
+}
+pub enum GeneratorErrorStrategy {
+   Base(GeneratorErrorCoreStrategy),
+   Default(HashMap<String,String>, GeneratorErrorCoreStrategy)
+}
+#[derive(Debug)]
+pub enum GeneratorError {
+  UndefinedParameter
+}
+impl FromStr for GeneratorErrorCoreStrategy {
+    type Err = ();
+    fn from_str(src: &str) -> Result<GeneratorErrorCoreStrategy, ()> {
+        return match src {
+            "fail" => Ok(GeneratorErrorCoreStrategy::Fail),
+            "ignore" => Ok(GeneratorErrorCoreStrategy::Ignore),
+            x => {
+                 if let Some(ind) = src.find("=") {
+                    if ind + 1 < src.len() {
+                        let (txt, rem) = src.split_at(ind+1);
+                        if txt == "fixed=" {
+                            Ok(GeneratorErrorCoreStrategy::Fixed(rem.to_string()))
+                        } else {
+                            Err(())
+                        }
+                    } else {
+                        Err(())
+                    }
+                 } else {
+                   Err(())
+                 }
+            },
+        };
+    }
+}
+
+pub fn generate_output(input: String, mapping: HashMap<String, String>, fail_response: &GeneratorErrorStrategy) -> Result<String, GeneratorError> {
+ let parameter_regex = Regex::new("\\{([^¬:{}\\\\]*)\\}").unwrap();
+ let mut lookup_failed = false;
+ let new_string = parameter_regex.replace_all(&input, |caps: &Captures| {
+    if let Some(value) = mapping.get(&caps[1]) {
+       value
+    } else {
+       match &fail_response {
+           GeneratorErrorStrategy::Base(strategy) => {
+               match strategy {
+                 GeneratorErrorCoreStrategy::Fail => {
+                     lookup_failed = true;
+                     ""
+                 }
+                 GeneratorErrorCoreStrategy::Ignore => {
+                     &caps[0]
+                 },
+                 GeneratorErrorCoreStrategy::Fixed(text) => {
+                     text
+                 }
+               }
+           }
+           GeneratorErrorStrategy::Default(mapping, strategy) => {
+               if let Some(value) = mapping.get(&caps[1]) {
+                  value
+               } else {
+                  match strategy {
+                    GeneratorErrorCoreStrategy::Fail => {
+                        lookup_failed = true;
+                        ""
+                    }
+                    GeneratorErrorCoreStrategy::Ignore => {
+                        &caps[0]
+                    },
+                    GeneratorErrorCoreStrategy::Fixed(text) => {
+                        text
+                    }
+                  }  
+               }
+           }
+       }  
+    }
+ });
+ if lookup_failed {
+    return Err(GeneratorError::UndefinedParameter);
+ }
+ Ok(new_string.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   #[test]
+   fn from_st_works() {
+     assert_eq!(GeneratorErrorCoreStrategy::from_str("ignore"), Ok(GeneratorErrorCoreStrategy::Ignore));
+     assert_eq!(GeneratorErrorCoreStrategy::from_str("fail"), Ok(GeneratorErrorCoreStrategy::Fail));
+     assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(GeneratorErrorCoreStrategy::Fixed("missing".to_string())));
+   }
+}
+\end{minted}
+
+
+The main utility provided by the generator is the main function that populates the templated string when given a mapping, additionally we must specify how the generator should respond when missing templates are found.
+\begin{minted}[breaklines]{rust}
+pub fn generate_output(input: String, mapping: HashMap<String, String>, fail_response: &GeneratorErrorStrategy) -> Result<String, GeneratorError> {
+ let parameter_regex = Regex::new("\\{([^¬:{}\\\\]*)\\}").unwrap();
+ let mut lookup_failed = false;
+ let new_string = parameter_regex.replace_all(&input, |caps: &Captures| {
+    if let Some(value) = mapping.get(&caps[1]) {
+       value
+    } else {
+       match &fail_response {
+           GeneratorErrorStrategy::Base(strategy) => {
+               match strategy {
+                 GeneratorErrorCoreStrategy::Fail => {
+                     lookup_failed = true;
+                     ""
+                 }
+                 GeneratorErrorCoreStrategy::Ignore => {
+                     &caps[0]
+                 },
+                 GeneratorErrorCoreStrategy::Fixed(text) => {
+                     text
+                 }
+               }
+           }
+           GeneratorErrorStrategy::Default(mapping, strategy) => {
+               if let Some(value) = mapping.get(&caps[1]) {
+                  value
+               } else {
+                  match strategy {
+                    GeneratorErrorCoreStrategy::Fail => {
+                        lookup_failed = true;
+                        ""
+                    }
+                    GeneratorErrorCoreStrategy::Ignore => {
+                        &caps[0]
+                    },
+                    GeneratorErrorCoreStrategy::Fixed(text) => {
+                        text
+                    }
+                  }  
+               }
+           }
+       }  
+    }
+ });
+ if lookup_failed {
+    return Err(GeneratorError::UndefinedParameter);
+ }
+ Ok(new_string.to_string())
+}
+\end{minted}
+
+The strategies the generator should accept are:
+\begin{itemize}
+\item \textbf{Fail} - Error out if a parameter that is not in the mapping is found in the template; this is the default.
+\item \textbf{Ignore} - ignore any missing parameters.
+\item \textbf{Fixed} - replace any missing parameters with a fixed response
+\item \textbf{Default} - try a default mapping for the keyword, otherwise try one of the other strategies.
+\end{itemize}
+To implement this, we'll use two structures, one to represent the non-recursive cases, and the other for the default option.
+\begin{minted}[breaklines]{rust}
+#[derive(Clone,Debug,PartialEq)]
+pub enum GeneratorErrorCoreStrategy {
+   Fail,
+   Ignore,
+   Fixed(String)
+}
+\end{minted}
+
+Thus for the full enum, we can avoid having to mess with boxes.
+\begin{minted}[breaklines]{rust}
+pub enum GeneratorErrorStrategy {
+   Base(GeneratorErrorCoreStrategy),
+   Default(HashMap<String,String>, GeneratorErrorCoreStrategy)
+}
+\end{minted}
+
+Now, the errors the templating function can return are partially based on the error response strategies.
+\begin{itemize}
+\item \textbf{Undefined Parameter} - An error when a paremeter with no mapping is found, and the strategy is sufficiently strict.
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+#[derive(Debug)]
+pub enum GeneratorError {
+  UndefinedParameter
+}
+\end{minted}
+
+
+The core logic of the generator is to use capture groups capabilities provided by the regex crate.
+
+We'll reuse the same pattern as used in the parser, but wrap it in braces and capture the contents.
+\begin{minted}[breaklines]{rust}
+let parameter_regex = Regex::new("\\{([^¬:{}\\\\]*)\\}").unwrap();
+\end{minted}
+
+Before we run the regex, we'll need to set up some variables to capture lookup errors.
+\begin{minted}[breaklines]{rust}
+let mut lookup_failed = false;
+\end{minted}
+
+
+Next, we'll run the regex on the input string.
+\begin{minted}[breaklines]{rust}
+let new_string = parameter_regex.replace_all(&input, |caps: &Captures| {
+   if let Some(value) = mapping.get(&caps[1]) {
+      value
+   } else {
+      match &fail_response {
+          GeneratorErrorStrategy::Base(strategy) => {
+              match strategy {
+                GeneratorErrorCoreStrategy::Fail => {
+                    lookup_failed = true;
+                    ""
+                }
+                GeneratorErrorCoreStrategy::Ignore => {
+                    &caps[0]
+                },
+                GeneratorErrorCoreStrategy::Fixed(text) => {
+                    text
+                }
+              }
+          }
+          GeneratorErrorStrategy::Default(mapping, strategy) => {
+              if let Some(value) = mapping.get(&caps[1]) {
+                 value
+              } else {
+                 match strategy {
+                   GeneratorErrorCoreStrategy::Fail => {
+                       lookup_failed = true;
+                       ""
+                   }
+                   GeneratorErrorCoreStrategy::Ignore => {
+                       &caps[0]
+                   },
+                   GeneratorErrorCoreStrategy::Fixed(text) => {
+                       text
+                   }
+                 }  
+              }
+          }
+      }  
+   }
+});
+\end{minted}
+
+If a lookup failed, then we'll return an error.
+\begin{minted}[breaklines]{rust}
+if lookup_failed {
+   return Err(GeneratorError::UndefinedParameter);
+}
+\end{minted}
+
+
+Once that's done we have the result string - it's a \texttt{Cow<str>} though, so we just need to do a conversion before returning it.
+\begin{minted}[breaklines]{rust}
+Ok(new_string.to_string())
+\end{minted}
+
+All that's left is to define the replacement logic - if it matches, we can simply return the value stored in the hashmap. 
+\begin{minted}[breaklines]{rust}
+if let Some(value) = mapping.get(&caps[1]) {
+   value
+} else {
+   match &fail_response {
+       GeneratorErrorStrategy::Base(strategy) => {
+           match strategy {
+             GeneratorErrorCoreStrategy::Fail => {
+                 lookup_failed = true;
+                 ""
+             }
+             GeneratorErrorCoreStrategy::Ignore => {
+                 &caps[0]
+             },
+             GeneratorErrorCoreStrategy::Fixed(text) => {
+                 text
+             }
+           }
+       }
+       GeneratorErrorStrategy::Default(mapping, strategy) => {
+           if let Some(value) = mapping.get(&caps[1]) {
+              value
+           } else {
+              match strategy {
+                GeneratorErrorCoreStrategy::Fail => {
+                    lookup_failed = true;
+                    ""
+                }
+                GeneratorErrorCoreStrategy::Ignore => {
+                    &caps[0]
+                },
+                GeneratorErrorCoreStrategy::Fixed(text) => {
+                    text
+                }
+              }  
+           }
+       }
+   }  
+}
+\end{minted}
+
+If the lookup failes, our action depends on the error strategy we've chosen.
+\begin{minted}[breaklines]{rust}
+match &fail_response {
+    GeneratorErrorStrategy::Base(strategy) => {
+        match strategy {
+          GeneratorErrorCoreStrategy::Fail => {
+              lookup_failed = true;
+              ""
+          }
+          GeneratorErrorCoreStrategy::Ignore => {
+              &caps[0]
+          },
+          GeneratorErrorCoreStrategy::Fixed(text) => {
+              text
+          }
+        }
+    }
+    GeneratorErrorStrategy::Default(mapping, strategy) => {
+        if let Some(value) = mapping.get(&caps[1]) {
+           value
+        } else {
+           match strategy {
+             GeneratorErrorCoreStrategy::Fail => {
+                 lookup_failed = true;
+                 ""
+             }
+             GeneratorErrorCoreStrategy::Ignore => {
+                 &caps[0]
+             },
+             GeneratorErrorCoreStrategy::Fixed(text) => {
+                 text
+             }
+           }  
+        }
+    }
+}
+\end{minted}
+
+For the base case, we simply match on the specific strategy chosen to decide our action.
+\begin{minted}[breaklines]{rust}
+match strategy {
+  GeneratorErrorCoreStrategy::Fail => {
+      lookup_failed = true;
+      ""
+  }
+  GeneratorErrorCoreStrategy::Ignore => {
+      &caps[0]
+  },
+  GeneratorErrorCoreStrategy::Fixed(text) => {
+      text
+  }
+}
+\end{minted}
+
+If the strategy is a fail fast case, then we still return an empty string, but we set the lookup failed
+error, thereby ensuring that the result of the call is an error.
+\begin{minted}[breaklines]{rust}
+lookup_failed = true;
+""
+\end{minted}
+
+If the strategy is an ignore case, we simply leave the parameter as it was.  
+\begin{minted}[breaklines]{rust}
+&caps[0]
+\end{minted}
+
+For the fixed case, we just return the fixed string.
+\begin{minted}[breaklines]{rust}
+text
+\end{minted}
+
+
+Now, for the default mapping case, we first check if the default mapping contains a value for the 
+parameter. If it does, we can simply return that value.
+\begin{minted}[breaklines]{rust}
+if let Some(value) = mapping.get(&caps[1]) {
+   value
+} else {
+   match strategy {
+     GeneratorErrorCoreStrategy::Fail => {
+         lookup_failed = true;
+         ""
+     }
+     GeneratorErrorCoreStrategy::Ignore => {
+         &caps[0]
+     },
+     GeneratorErrorCoreStrategy::Fixed(text) => {
+         text
+     }
+   }  
+}
+\end{minted}
+
+
+If it doesn't, we simply match on the error strategy as previous.
+\begin{minted}[breaklines]{rust}
+match strategy {
+  GeneratorErrorCoreStrategy::Fail => {
+      lookup_failed = true;
+      ""
+  }
+  GeneratorErrorCoreStrategy::Ignore => {
+      &caps[0]
+  },
+  GeneratorErrorCoreStrategy::Fixed(text) => {
+      text
+  }
+}
+\end{minted}
+
+\subsection{Crawler Logic}
+\label{sec:org5590ecf}
+The core logic for the crawler is to descend the input directory, keeping track of the current path, pass each file through the parser, then pass on the generated mapping to the generator, along with a corresponding template file and output file.
+
+We'll be importing the following libraries for doing the core logic.
+\begin{minted}[breaklines]{rust}
+use std::fs;
+use std::io::Read;
+use std::fs::File;
+use std::path::Path;
+use std::convert::AsRef;
+\end{minted}
+
+We'll also be bringing in the parsing function from the parser, and the generator function from the generator.
+\begin{minted}[breaklines]{rust}
+use parser::{parse_source_string,ParseError};
+use generator::{generate_output, GeneratorError, GeneratorErrorStrategy};
+\end{minted}
+
+The main structure for the crawler is as follows.
+\begin{minted}[breaklines]{rust}
+use std::fs;
+use std::io::Read;
+use std::fs::File;
+use std::path::Path;
+use std::convert::AsRef;
+use parser::{parse_source_string,ParseError};
+use generator::{generate_output, GeneratorError, GeneratorErrorStrategy};
+
+#[derive(Debug)]
+pub enum CrawlError {
+  ParseError(ParseError),
+  GeneratorError(GeneratorError),
+  TemplateNotFound(String),
+  InputDirectoryError,
+  OutputFileError(String),
+  InputFileError(String),
+}
+
+pub fn crawl_directories<P,Q,R>(
+    output_directory: &P, 
+    input_directory: &Q, 
+    template_path: &R, 
+    err_strat: &GeneratorErrorStrategy
+) -> Result<u32,CrawlError> 
+ where P : AsRef<Path>,
+       Q : AsRef<Path>,
+       R : AsRef<Path> {
+let mut file_count = 0;
+let input_files = input_directory.as_ref()
+                  .read_dir()
+                  .map_err(|_| 
+                        CrawlError::InputDirectoryError
+                  )?;
+for input_file in input_files {
+   let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   let input_file_name = input_file.file_name();
+   let input_file_path = input_file.path();
+   let input_file_extension = input_file_path.extension().and_then(|ext| ext.to_str());
+   let input_file_base = input_file_path.file_stem().and_then(|stem| stem.to_str());
+   if input_metadata.is_dir() {
+       let dir_name = Path::new(&input_file_name);
+       let new_output_dir = output_directory
+                            .as_ref()
+                            .join(&dir_name);
+       let new_input_dir = input_directory
+                           .as_ref()
+                           .join(&dir_name);
+       let n_count = crawl_directories(
+           &new_output_dir, 
+           &new_input_dir, 
+           template_path, 
+           err_strat
+       )?;
+       file_count += n_count;
+   } else if input_metadata.is_file() && (input_file_extension == Some("gop")) && (input_file_base.is_some()) {
+       let input_text = {
+          let mut temp = String::new();
+          let mut file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+          file.read_to_string(&mut temp).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+          temp
+       };
+       let (template_name, mapping) = parse_source_string(&input_text).map_err(|e| CrawlError::ParseError(e))?;
+       let template_path = template_path.as_ref().join(&Path::new(&template_name));
+       let template_text = {
+          let mut temp = String::new();
+          let mut file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+          file.read_to_string(&mut temp).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+          temp
+       };
+       let result = generate_output(
+          template_text, 
+          mapping, 
+          err_strat
+       ).map_err(|e| CrawlError::GeneratorError(e))?;
+       let input_file_base = input_file_base.unwrap();
+       let mut new_file_name = String::from(input_file_base);
+       new_file_name.push_str(".html");
+       let output_path = 
+           output_directory.as_ref().join(&Path::new(&new_file_name));
+       fs::write(&output_path, result)
+           .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
+       file_count += 1;
+   } else {
+      eprintln!("WARN: Encountered a non-template file (or non unicode path) during crawling the input directory {:?}", input_file);
+   }
+}
+Ok(file_count)
+}
+\end{minted}
+
+Our crawling function, takes as input the input directory, the output directory, the template directory and the error strategy for the generator.
+\begin{minted}[breaklines]{rust}
+pub fn crawl_directories<P,Q,R>(
+    output_directory: &P, 
+    input_directory: &Q, 
+    template_path: &R, 
+    err_strat: &GeneratorErrorStrategy
+) -> Result<u32,CrawlError> 
+ where P : AsRef<Path>,
+       Q : AsRef<Path>,
+       R : AsRef<Path> {
+let mut file_count = 0;
+let input_files = input_directory.as_ref()
+                  .read_dir()
+                  .map_err(|_| 
+                        CrawlError::InputDirectoryError
+                  )?;
+for input_file in input_files {
+   let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   let input_file_name = input_file.file_name();
+   let input_file_path = input_file.path();
+   let input_file_extension = input_file_path.extension().and_then(|ext| ext.to_str());
+   let input_file_base = input_file_path.file_stem().and_then(|stem| stem.to_str());
+   if input_metadata.is_dir() {
+       let dir_name = Path::new(&input_file_name);
+       let new_output_dir = output_directory
+                            .as_ref()
+                            .join(&dir_name);
+       let new_input_dir = input_directory
+                           .as_ref()
+                           .join(&dir_name);
+       let n_count = crawl_directories(
+           &new_output_dir, 
+           &new_input_dir, 
+           template_path, 
+           err_strat
+       )?;
+       file_count += n_count;
+   } else if input_metadata.is_file() && (input_file_extension == Some("gop")) && (input_file_base.is_some()) {
+       let input_text = {
+          let mut temp = String::new();
+          let mut file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+          file.read_to_string(&mut temp).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+          temp
+       };
+       let (template_name, mapping) = parse_source_string(&input_text).map_err(|e| CrawlError::ParseError(e))?;
+       let template_path = template_path.as_ref().join(&Path::new(&template_name));
+       let template_text = {
+          let mut temp = String::new();
+          let mut file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+          file.read_to_string(&mut temp).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+          temp
+       };
+       let result = generate_output(
+          template_text, 
+          mapping, 
+          err_strat
+       ).map_err(|e| CrawlError::GeneratorError(e))?;
+       let input_file_base = input_file_base.unwrap();
+       let mut new_file_name = String::from(input_file_base);
+       new_file_name.push_str(".html");
+       let output_path = 
+           output_directory.as_ref().join(&Path::new(&new_file_name));
+       fs::write(&output_path, result)
+           .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
+       file_count += 1;
+   } else {
+      eprintln!("WARN: Encountered a non-template file (or non unicode path) during crawling the input directory {:?}", input_file);
+   }
+}
+Ok(file_count)
+}
+\end{minted}
+
+The errors produced by the crawler are as follows.
+\begin{itemize}
+\item \textbf{ParseError} - When a parser occurs
+\item \textbf{GeneratorError} - when a generator occurs
+\item \textbf{TemplateNotFound} - When a template is not found
+\item \textbf{InputDirectoryError} - When the input directory does not exist
+\item \textbf{OutputDirectoryError} - When the output directory does not exist
+\end{itemize}
+\begin{minted}[breaklines]{rust}
+#[derive(Debug)]
+pub enum CrawlError {
+  ParseError(ParseError),
+  GeneratorError(GeneratorError),
+  TemplateNotFound(String),
+  InputDirectoryError,
+  OutputFileError(String),
+  InputFileError(String),
+}
+\end{minted}
+
+Before we begin, let's set up a counter to enumerate the number of files converted.
+\begin{minted}[breaklines]{rust}
+let mut file_count = 0;
+\end{minted}
+
+First, we'll extract all the files in the input directory.
+\begin{minted}[breaklines]{rust}
+let input_files = input_directory.as_ref()
+                  .read_dir()
+                  .map_err(|_| 
+                        CrawlError::InputDirectoryError
+                  )?;
+for input_file in input_files {
+   let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   let input_file_name = input_file.file_name();
+   let input_file_path = input_file.path();
+   let input_file_extension = input_file_path.extension().and_then(|ext| ext.to_str());
+   let input_file_base = input_file_path.file_stem().and_then(|stem| stem.to_str());
+   if input_metadata.is_dir() {
+       let dir_name = Path::new(&input_file_name);
+       let new_output_dir = output_directory
+                            .as_ref()
+                            .join(&dir_name);
+       let new_input_dir = input_directory
+                           .as_ref()
+                           .join(&dir_name);
+       let n_count = crawl_directories(
+           &new_output_dir, 
+           &new_input_dir, 
+           template_path, 
+           err_strat
+       )?;
+       file_count += n_count;
+   } else if input_metadata.is_file() && (input_file_extension == Some("gop")) && (input_file_base.is_some()) {
+       let input_text = {
+          let mut temp = String::new();
+          let mut file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+          file.read_to_string(&mut temp).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+          temp
+       };
+       let (template_name, mapping) = parse_source_string(&input_text).map_err(|e| CrawlError::ParseError(e))?;
+       let template_path = template_path.as_ref().join(&Path::new(&template_name));
+       let template_text = {
+          let mut temp = String::new();
+          let mut file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+          file.read_to_string(&mut temp).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+          temp
+       };
+       let result = generate_output(
+          template_text, 
+          mapping, 
+          err_strat
+       ).map_err(|e| CrawlError::GeneratorError(e))?;
+       let input_file_base = input_file_base.unwrap();
+       let mut new_file_name = String::from(input_file_base);
+       new_file_name.push_str(".html");
+       let output_path = 
+           output_directory.as_ref().join(&Path::new(&new_file_name));
+       fs::write(&output_path, result)
+           .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
+       file_count += 1;
+   } else {
+      eprintln!("WARN: Encountered a non-template file (or non unicode path) during crawling the input directory {:?}", input_file);
+   }
+}
+\end{minted}
+
+For each file, we need to check its metadata.
+\begin{minted}[breaklines]{rust}
+let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+let input_file_name = input_file.file_name();
+let input_file_path = input_file.path();
+let input_file_extension = input_file_path.extension().and_then(|ext| ext.to_str());
+let input_file_base = input_file_path.file_stem().and_then(|stem| stem.to_str());
+\end{minted}
+
+Now our next action is dependent on the type of entry - we'll need to do different things based on whether we find a file or a directory.
+\begin{minted}[breaklines]{rust}
+if input_metadata.is_dir() {
+    let dir_name = Path::new(&input_file_name);
+    let new_output_dir = output_directory
+                         .as_ref()
+                         .join(&dir_name);
+    let new_input_dir = input_directory
+                        .as_ref()
+                        .join(&dir_name);
+    let n_count = crawl_directories(
+        &new_output_dir, 
+        &new_input_dir, 
+        template_path, 
+        err_strat
+    )?;
+    file_count += n_count;
+} else if input_metadata.is_file() && (input_file_extension == Some("gop")) && (input_file_base.is_some()) {
+    let input_text = {
+       let mut temp = String::new();
+       let mut file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+       file.read_to_string(&mut temp).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+       temp
+    };
+    let (template_name, mapping) = parse_source_string(&input_text).map_err(|e| CrawlError::ParseError(e))?;
+    let template_path = template_path.as_ref().join(&Path::new(&template_name));
+    let template_text = {
+       let mut temp = String::new();
+       let mut file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+       file.read_to_string(&mut temp).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+       temp
+    };
+    let result = generate_output(
+       template_text, 
+       mapping, 
+       err_strat
+    ).map_err(|e| CrawlError::GeneratorError(e))?;
+    let input_file_base = input_file_base.unwrap();
+    let mut new_file_name = String::from(input_file_base);
+    new_file_name.push_str(".html");
+    let output_path = 
+        output_directory.as_ref().join(&Path::new(&new_file_name));
+    fs::write(&output_path, result)
+        .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
+    file_count += 1;
+} else {
+   eprintln!("WARN: Encountered a non-template file (or non unicode path) during crawling the input directory {:?}", input_file);
+}
+\end{minted}
+
+Now, if the file is a directory, we do a recursive call, appending the directory name to the input path and output path 
+\begin{minted}[breaklines]{rust}
+let dir_name = Path::new(&input_file_name);
+let new_output_dir = output_directory
+                     .as_ref()
+                     .join(&dir_name);
+let new_input_dir = input_directory
+                    .as_ref()
+                    .join(&dir_name);
+let n_count = crawl_directories(
+    &new_output_dir, 
+    &new_input_dir, 
+    template_path, 
+    err_strat
+)?;
+file_count += n_count;
+\end{minted}
+
+
+On the other hand, if the file is just a file, we first need to read the file.
+\begin{minted}[breaklines]{rust}
+let input_text = {
+   let mut temp = String::new();
+   let mut file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   file.read_to_string(&mut temp).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
+   temp
+};
+\end{minted}
+
+Now we'll run the parser on this text.
+\begin{minted}[breaklines]{rust}
+let (template_name, mapping) = parse_source_string(&input_text).map_err(|e| CrawlError::ParseError(e))?;
+\end{minted}
+
+Now we need to read the template to a string.
+\begin{minted}[breaklines]{rust}
+let template_path = template_path.as_ref().join(&Path::new(&template_name));
+let template_text = {
+   let mut temp = String::new();
+   let mut file = File::open(template_path).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+   file.read_to_string(&mut temp).map_err(|e| CrawlError::TemplateNotFound(format!("{:?}", e)))?;
+   temp
+};
+\end{minted}
+
+With the template and the mapping, we can run the generator.
+\begin{minted}[breaklines]{rust}
+let result = generate_output(
+   template_text, 
+   mapping, 
+   err_strat
+).map_err(|e| CrawlError::GeneratorError(e))?;
+\end{minted}
+
+Before we write this to the output directory, we need to construct a new name for the file.
+\begin{minted}[breaklines]{rust}
+let input_file_base = input_file_base.unwrap();
+let mut new_file_name = String::from(input_file_base);
+new_file_name.push_str(".html");
+\end{minted}
+
+Finally, we can write this to the output directory.
+\begin{minted}[breaklines]{rust}
+let output_path = 
+    output_directory.as_ref().join(&Path::new(&new_file_name));
+fs::write(&output_path, result)
+    .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
+file_count += 1;
+\end{minted}
+
+
+
+\begin{minted}[breaklines]{rust}
+Ok(file_count)
+\end{minted}
+
+\section{Error Strategy}
+\label{sec:orgfe216cc}
+Now for the final part of the application - implementing the error strategy from before.
+
+Before we do anything, we'll need to extend the capabilities of a prior structure - specifically the GeneratorErrorCoreStrategy, and 
+the capability to parse the element from a string.
+\begin{minted}[breaklines]{rust}
+impl FromStr for GeneratorErrorCoreStrategy {
+    type Err = ();
+    fn from_str(src: &str) -> Result<GeneratorErrorCoreStrategy, ()> {
+        return match src {
+            "fail" => Ok(GeneratorErrorCoreStrategy::Fail),
+            "ignore" => Ok(GeneratorErrorCoreStrategy::Ignore),
+            x => {
+                 if let Some(ind) = src.find("=") {
+                    if ind + 1 < src.len() {
+                        let (txt, rem) = src.split_at(ind+1);
+                        if txt == "fixed=" {
+                            Ok(GeneratorErrorCoreStrategy::Fixed(rem.to_string()))
+                        } else {
+                            Err(())
+                        }
+                    } else {
+                        Err(())
+                    }
+                 } else {
+                   Err(())
+                 }
+            },
+        };
+    }
+}
+\end{minted}
+
+As you can see, we're referencing the \texttt{FromStr} trait which we'll need to import.
+\begin{minted}[breaklines]{rust}
+use std::str::FromStr;
+\end{minted}
+
+
+Now let's just quickly add some tests to verify this actually works.
+\begin{minted}[breaklines]{rust}
+#[test]
+fn from_st_works() {
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("ignore"), Ok(GeneratorErrorCoreStrategy::Ignore));
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("fail"), Ok(GeneratorErrorCoreStrategy::Fail));
+  assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(GeneratorErrorCoreStrategy::Fixed("missing".to_string())));
+}
+\end{minted}
+
+
+Okay, now onto the topic of determining an error response strategy.
+
+We'll be doing this by splitting the concerns into two separate components - first identifying the core strategy and then identifying 
+the use of a default strategy or not.
+
+First for the core strategy, we'll set a default and then populate it.
+\begin{minted}[breaklines]{rust}
+let mut opt_strat = generator::GeneratorErrorCoreStrategy::Fail;
+\end{minted}
+
+Using the from string implementation we described earlier, we can parse this as follows.
+\begin{minted}[breaklines]{rust}
+ap.refer(&mut opt_strat)
+  .add_option(&["-e", "--error"],
+              argparse::Store,
+              "Fail on the first undefined parameter");
+\end{minted}
+
+For the default strategy we'll be using an optional value which we'll try and populate. If it isn't populated then we'll know that
+there is no default strategy.
+\begin{minted}[breaklines]{rust}
+let mut def_strat = None;
+\end{minted}
+
+Once again, for the default we'll just try and populate the string.
+\begin{minted}[breaklines]{rust}
+ap.refer(&mut def_strat)
+  .add_option(&["-d", "--default"],
+              argparse::StoreOption,
+              "Additional mapping for storing default values. If not specified, the environment variable GOP_HTML_DEFAULTS if defined, is used as a default.");
+\end{minted}
+
+If none was provided we'll try and retrieve it from the environment under the key \texttt{GOP\_HTML\_DEFAULTS}.
+\begin{minted}[breaklines]{rust}
+let def_strat = def_strat.or_else(|| env::var("GOP_HTML_DEFAULTS").ok());
+\end{minted}
+
+Finally, we can construct the error strategy based on whether a default is provided.
+\begin{minted}[breaklines]{rust}
+let err_strat = match def_strat {
+   None => 
+      generator::GeneratorErrorStrategy::Base(opt_strat),
+   Some(path) => {
+      let mapping = { 
+          let def_path = Path::new(&path);
+          if let Ok(mut file) = File::open(&def_path) {
+             let mut def_source = String::new();
+             if let Ok(_count) = file.read_to_string(&mut def_source) {
+                 parser::parse_source_string(&def_source).ok()
+             } else {
+                 None
+             }
+          } else {
+              None
+          } 
+      };
+      match mapping {
+        Some((name, map)) => 
+            generator::GeneratorErrorStrategy::Default(map, opt_strat), 
+        None => {
+            eprintln!("Encountered error while reading default mapping at {:?}.", path);
+            generator::GeneratorErrorStrategy::Base(opt_strat)
+        }
+      }
+   }
+};
+\end{minted}
+
+Now all we've got to do is retrieve the mapping.
+\begin{minted}[breaklines]{rust}
+let def_path = Path::new(&path);
+if let Ok(mut file) = File::open(&def_path) {
+   let mut def_source = String::new();
+   if let Ok(_count) = file.read_to_string(&mut def_source) {
+       parser::parse_source_string(&def_source).ok()
+   } else {
+       None
+   }
+} else {
+    None
+}
+\end{minted}
+\end{document}
