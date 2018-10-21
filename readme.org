@@ -1,10 +1,18 @@
 * HtmlGen
+Does the following sound familliar to you?
+
 A: "All I want is to template some files for a static site."
+
 B: "Oh, okay, that's simply, just install npm, and packages yarn,gulp,react,express........."
+
 A: "..."
 
-A simple little standalone static templating engine for HTML.
+Introducing HTMLGEN, a simple little standalone static templating engine for HTML.
 Coded using literate programming.
+
+Now with 50 page book describing how to make your own HtmlGen!
+
+Available at: https://github.com/Gopiandcode/html_gen/raw/master/html_gen.pdf
 
 * Usage
 The command line interface for the program is as follows.
