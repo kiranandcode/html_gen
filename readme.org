@@ -10,7 +10,8 @@ A: "..."
 Introducing HTMLGEN, a simple little standalone static templating engine for HTML.
 Coded using literate programming.
 
-Now with [50 page book](http://github.com) describing how to make your own HtmlGen!
+Now with 50 page book describing how to make your own HtmlGen!
+Available at: https://github.com/Gopiandcode/html_gen/raw/master/html_gen.pdf
 
 * Usage
 The command line interface for the program is as follows.
