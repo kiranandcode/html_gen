@@ -105,4 +105,3 @@ mod tests {
      assert_eq!(GeneratorErrorCoreStrategy::from_str("fixed=missing"), Ok(GeneratorErrorCoreStrategy::Fixed("missing".to_string())));
    }
 }
-
