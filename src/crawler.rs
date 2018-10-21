@@ -50,6 +50,9 @@ for input_file in input_files {
        let new_input_dir = input_directory
                            .as_ref()
                            .join(&dir_name);
+
+       fs::create_dir_all(&new_output_dir);
+
        let n_count = crawl_directories(
            &new_output_dir, 
            &new_input_dir, 

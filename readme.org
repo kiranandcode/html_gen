@@ -773,6 +773,18 @@ let new_output_dir = output_directory
 let new_input_dir = input_directory
                     .as_ref()
                     .join(&dir_name);
+
+#+end_src
+
+Let's also make sure the new output directory actually exists to prevent any issues.
+#+name: crawler directory logic
+#+begin_src rust :noweb yes :comments org
+fs::create_dir_all(&new_output_dir);
+#+end_src
+
+Then we can do the recursive step.
+#+name: crawler directory logic
+#+begin_src rust :noweb yes :comments org
 let n_count = crawl_directories(
     &new_output_dir, 
     &new_input_dir, 
