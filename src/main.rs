@@ -40,9 +40,6 @@ mod generator;
 
 
 fn main() {
- // let mut output_path = String::from("bin");
- // let mut template_path = String::from("template");
- // let mut input_path = String::from("src");
  let mut output_path = String::from("");
  let mut template_path = String::from("");
  let mut input_path = String::from("");
@@ -60,20 +57,22 @@ fn main() {
      ap.refer(&mut output_path)
      .add_option(&["-o","--output"], 
                  argparse::Store, 
-                 "directory for the output files to be saved");
+                 "Directory for the output files to be saved. It defaults to BASEDIR/bin");
  
      ap.refer(&mut template_path)
      .add_option(&["-t","--template"], 
                  argparse::Store, 
-                 "directory to be searched to find templates");
+                 "Directory to be searched to find templates. It defaults to BASEDIR/template");
  
      ap.refer(&mut input_path)
      .add_option(&["-i","--input"], 
-                 argparse::Store, "
-                 directory in which the source files to be compiled are located");
+                 argparse::Store, 
+                 "Directory in which the source files to be compiled are located. It defaults to BASEDIR/bin");
  
      ap.refer(&mut base_dir)
-     .add_argument("BASEDIR", argparse::StoreOption, "the project directory - if not specified, then --input, --template and --output flags must be specified.");
+     .add_argument("BASEDIR", 
+           argparse::StoreOption, 
+           "The project directory. If not specified, then --input, --template and --output flags must be given. ");
  
      // [[file:~/Documents/html_gen/html_gen.org::high%20level%20error%20args][high level error args]]
      ap.refer(&mut opt_strat)
@@ -85,7 +84,7 @@ fn main() {
      ap.refer(&mut def_strat)
        .add_option(&["-d", "--default"],
                    argparse::StoreOption,
-                   "Additional mapping for storing default values");
+                   "Additional mapping for storing default values. If not specified, the environment variable GOP_HTML_DEFAULTS if defined, is used as a default.");
      // high level error args ends here
  
      ap.print_help("htmlgen", &mut help_string);

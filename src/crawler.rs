@@ -39,6 +39,9 @@ for input_file in input_files {
    let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
    let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
    let input_file_name = input_file.file_name();
+   let input_file_path = input_file.path();
+   let input_file_extension = input_file_path.extension().and_then(|ext| ext.to_str());
+   let input_file_base = input_file_path.file_stem().and_then(|stem| stem.to_str());
    if input_metadata.is_dir() {
        let dir_name = Path::new(&input_file_name);
        let new_output_dir = output_directory
@@ -54,7 +57,7 @@ for input_file in input_files {
            err_strat
        )?;
        file_count += n_count;
-   } else if input_metadata.is_file() {
+   } else if input_metadata.is_file() && (input_file_extension == Some("gop")) && (input_file_base.is_some()) {
        let input_text = {
           let mut temp = String::new();
           let mut file = File::open(input_file.path()).map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
@@ -74,13 +77,16 @@ for input_file in input_files {
           mapping, 
           err_strat
        ).map_err(|e| CrawlError::GeneratorError(e))?;
+       let input_file_base = input_file_base.unwrap();
+       let mut new_file_name = String::from(input_file_base);
+       new_file_name.push_str(".html");
        let output_path = 
-           output_directory.as_ref().join(&Path::new(&input_file_name));
+           output_directory.as_ref().join(&Path::new(&new_file_name));
        fs::write(&output_path, result)
            .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
        file_count += 1;
    } else {
-      eprintln!("Encountered a non-file file during crawling the input directory {:?}", input_file);
+      eprintln!("WARN: Encountered a non-template file (or non unicode path) during crawling the input directory {:?}", input_file);
    }
 }
 Ok(file_count)

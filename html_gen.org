@@ -6,6 +6,33 @@ A: "..."
 A simple little standalone static templating engine for HTML.
 Coded using literate programming.
 
+* Usage
+The command line interface for the program is as follows.
+#+begin_src shell
+Usage:
+  htmlgen [OPTIONS] [BASEDIR]
+
+Simple templating engine for html documents
+
+Positional arguments:
+  BASEDIR               The project directory. If not specified, then --input,
+                        --template and --output flags must be given.
+
+Optional arguments:
+  -h,--help             Show this help message and exit
+  -o,--output OUTPUT    Directory for the output files to be saved. It defaults
+                        to BASEDIR/bin
+  -t,--template TEMPLATE
+                        Directory to be searched to find templates. It defaults
+                        to BASEDIR/template
+  -i,--input INPUT      Directory in which the source files to be compiled are
+                        located. It defaults to BASEDIR/bin
+  -e,--error ERROR      Fail on the first undefined parameter
+  -d,--default DEFAULT  Additional mapping for storing default values. If not 
+                        specified, the environment variable GOP_HTML_DEFAULTS
+                        if defined, is used as a default.
+#+end_src
+
 * Preamble
 While the overall nature of this project is quite simple - just a bit of file loading and exports, we can leverage rust's ecosystem to make our development a little easier.
 
@@ -96,7 +123,7 @@ Using argparse, we can implement this cmdline interface as follows:
         ap.refer(&mut base_dir)
         .add_argument("BASEDIR", 
               argparse::StoreOption, 
-              "The project directory. If not specified, then --input, --template and --output flags must be given.");
+              "The project directory. If not specified, then --input, --template and --output flags must be given. ");
 
         <<high level error args>>
         
@@ -719,6 +746,9 @@ For each file, we need to check its metadata.
 let input_file = input_file.map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
 let input_metadata = input_file.metadata().map_err(|e| CrawlError::InputFileError(format!("{:?}", e)))?;
 let input_file_name = input_file.file_name();
+let input_file_path = input_file.path();
+let input_file_extension = input_file_path.extension().and_then(|ext| ext.to_str());
+let input_file_base = input_file_path.file_stem().and_then(|stem| stem.to_str());
 #+end_src
 
 Now our next action is dependent on the type of entry - we'll need to do different things based on whether we find a file or a directory.
@@ -726,10 +756,10 @@ Now our next action is dependent on the type of entry - we'll need to do differe
 #+begin_src rust :noweb yes :comments org
 if input_metadata.is_dir() {
     <<crawler directory logic>>
-} else if input_metadata.is_file() {
+} else if input_metadata.is_file() && (input_file_extension == Some("gop")) && (input_file_base.is_some()) {
     <<crawler input file logic>>
 } else {
-   eprintln!("Encountered a non-file file during crawling the input directory {:?}", input_file);
+   eprintln!("WARN: Encountered a non-template file (or non unicode path) during crawling the input directory {:?}", input_file);
 }
 #+end_src
 
@@ -751,6 +781,7 @@ let n_count = crawl_directories(
 )?;
 file_count += n_count;
 #+end_src
+
 
 On the other hand, if the file is just a file, we first need to read the file.
 #+name: crawler input file logic
@@ -791,11 +822,19 @@ let result = generate_output(
 ).map_err(|e| CrawlError::GeneratorError(e))?;
 #+end_src
 
+Before we write this to the output directory, we need to construct a new name for the file.
+#+name: crawler input file logic
+#+begin_src rust :noweb yes :comments org
+let input_file_base = input_file_base.unwrap();
+let mut new_file_name = String::from(input_file_base);
+new_file_name.push_str(".html");
+#+end_src
+
 Finally, we can write this to the output directory.
 #+name: crawler input file logic
 #+begin_src rust :noweb yes :comments org
 let output_path = 
-    output_directory.as_ref().join(&Path::new(&input_file_name));
+    output_directory.as_ref().join(&Path::new(&new_file_name));
 fs::write(&output_path, result)
     .map_err(|e| CrawlError::OutputFileError(format!("{:?}", e)))?;
 file_count += 1;
@@ -894,7 +933,7 @@ Once again, for the default we'll just try and populate the string.
 ap.refer(&mut def_strat)
   .add_option(&["-d", "--default"],
               argparse::StoreOption,
-              "Additional mapping for storing default values");
+              "Additional mapping for storing default values. If not specified, the environment variable GOP_HTML_DEFAULTS if defined, is used as a default.");
 #+end_src
 
 If none was provided we'll try and retrieve it from the environment under the key ~GOP_HTML_DEFAULTS~.
