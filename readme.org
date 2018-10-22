@@ -41,6 +41,50 @@ Optional arguments:
                         if defined, is used as a default.
 #+end_src
 
+To use the program, first write a templated html fiile, with '{NAME}' for parameters:
+#+begin_src html 
+<html>
+<head>
+<title>{title}</title>
+{style}
+</head>
+<body>
+<h1>{title}</h1>
+<p>{body}</p>
+</body>
+</html>
+#+end_src
+Save this in the template directory of your project - we'll store it in './template/blog/simple.gop'.
+
+Then construct a mapping file in the '.gop' format (whitespace insensitive):
+#+begin_src 
+#+template blog/simple.gop
+title: A statically generated site without any JS¬
+body: 
+    I built this site <b>without</b> any JS baby.
+    I can put divs <div>within this templated content</div>
+    without issue¬
+style:
+<link ref="" name="style" />¬
+#+end_src
+
+Then we can run the application as "html_gen ."; this will produce the following html:
+#+begin_src html
+<html>
+<head>
+<title>A statically generated site without any JS</title>
+   <link ref="" name="style" />
+</head>
+<body>
+<h1>A statically generated site without any JS</h1>
+<p>
+    I built this site <b>without</b> any JS baby.
+    I can put divs <div>within this templated content</div>
+    without issue</p>
+</body>
+</html>
+#+end_src
+
 * Preamble
 While the overall nature of this project is quite simple - just a bit of file loading and exports, we can leverage rust's ecosystem to make our development a little easier.
 
